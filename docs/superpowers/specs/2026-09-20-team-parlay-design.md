@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-20  
 **Project:** Team Parlay Fantasy Football Web App  
-**Status:** Draft / Pending Review  
+**Status:** Revised Draft / Incorporating Security & Betting Mechanics Feedback  
 
 ---
 
@@ -10,23 +10,19 @@
 
 In an NFL fantasy football league, each week the team scoring the lowest points is designated as the weekly "Bettor" and is on the hook to fund a \$5 team parlay ticket. Every league member is entitled to submit one "leg" to construct the combined parlay ticket.
 
-### The Problem
-Coordinating and chasing 10–12 fantasy managers each week across text threads or group chats to get their betting legs before games kick off is notoriously difficult. People forget, miss deadlines, or submit invalid bets on teams that are on bye.
-
-### The Solution
-A lightweight, mobile-first web app tailored for the league:
-1. **Automated Bettor Identification:** Automatically syncs with the Sleeper API each Tuesday to find the lowest scoring team from the previous week and puts them "On the Hook."
-2. **Weekly Pick Flexibility:** Members can pick live lines from sportsbooks (spreads, moneylines, totals, player props) or enter custom lines/alternate targets of their choosing.
-3. **Intent-Based Default Legs Pool:** Members configure a permanent pool of 3–5 recurring favorite bets (e.g. *Chiefs Spread*, *Derrick Henry Rushing Over*). If a member fails to pick, the system automatically selects an eligible default leg, dynamically snapping to whatever the current week's line is.
-4. **Schedule & Bye-Week Validation:** Automatically excludes default legs if the player/team is on a bye week or their game has already kicked off.
-5. **Parlay Odds & Estimated Payout:** Multiplies individual decimal odds to display the estimated total parlay multiplier and \$5 payout, with clear disclaimer badges and an optional sportsbook slip payout override.
-6. **Decentralized Auth & Break-Glass Finalization:** Zero-friction team access via 4-digit PINs. The weekly bettor has primary authorization to finalize and roll the parlay, with an emergency "break-glass" override available for any league mate if the bettor is unavailable.
-7. **Sleeper Chat Exporter:** Generates a formatted text card with one-click copy to post into the Sleeper league chat.
-8. **Past Slips Archive:** Simple, read-only viewer of past weeks' finalized slips.
+### Core Problems Solved
+1. **Automated Bettor Identification:** Syncs with Sleeper matchups each Tuesday to find the lowest-scoring team with a strictly deterministic tie-breaker hierarchy.
+2. **Weekly Pick Flexibility:** Members can select live sportsbook lines (spreads, moneylines, totals, player props) or input custom lines/alternate targets.
+3. **Intent-Based Default Legs Pool:** Members configure 3–5 recurring favorite bets (e.g. *Chiefs Spread*, *Derrick Henry Rushing Over*). If a member fails to pick, the system automatically rolls an eligible default leg, dynamically snapping to whatever the current week's line is.
+4. **Partial Locking & Kickoff Schedule Handling:** Legs lock individually at game kickoff (e.g., Thursday Night Football). Finalizing the ticket on Sunday morning preserves any previously locked TNF legs rather than overwriting them.
+5. **Accurate SGP & Correlation Handling:** Detects correlated same-game legs, flags tickets with a clear `contains_sgp` indicator and payout divergence warning, and facilitates entering the actual sportsbook odds/URL.
+6. **Post-Placement Bet Lifecycle:** Supports leg-level resolutions (`won`, `lost`, `voided`, `push`) and overall parlay outcomes for an accurate historical ledger.
+7. **Secure, Zero-Friction Auth & Break-Glass Finalization:** Salted SHA-256 hash storage in `localStorage` (no plaintext PINs). The weekly bettor holds primary finalization authority, with a transparent "break-glass" override for any league member.
+8. **Automated Quota & Rate Limit Protection:** Strict backend caching via scheduled Cloud Scheduler jobs; client requests never query The Odds API directly.
 
 ---
 
-## 2. Architecture & Tech Stack
+## 2. Architecture & External Integration
 
 ```
                              +-----------------------------------+
@@ -35,31 +31,38 @@ A lightweight, mobile-first web app tailored for the league:
                              +-----------------------------------+
                                                |
                         +----------------------+----------------------+
-                        |                                             |
+                        | (Firestore Reads/Writes)                    | (Callable Functions)
                         v                                             v
              +---------------------+                       +---------------------+
              |   Cloud Firestore   |                       |   Python Firebase   |
              | - League Config     |                       |   Cloud Functions   |
              | - Teams & Defaults  |                       | - sync_sleeper      |
-             | - Weekly Parlays    |                       | - fetch_odds        |
-             | - Cached Odds Data  |                       | - finalize_parlay   |
-             +---------------------+                       +---------------------+
-                        ^                                             |
-                        |                                  +----------+----------+
-                        |                                  |                     |
-                        |                                  v                     v
-                        |                           +-------------+       +-------------+
-                        +---------------------------| Sleeper API |       |The Odds API |
-                                                    +-------------+       +-------------+
+             | - Weekly Parlays    |                       | - finalize_parlay   |
+             | - Cached Odds Data  |<---+                  | - resolve_parlay    |
+             +---------------------+    |                  +---------------------+
+                                        |                             |
+                             +--------------------+                   |
+                             |  Cloud Scheduler   |                   v
+                             |  (CRON Odds Cache) |            +-------------+
+                             +--------------------+            | Sleeper API |
+                                        |                      +-------------+
+                                        v
+                                 +-------------+
+                                 |The Odds API |
+                                 +-------------+
 ```
 
-### Stack Details
-* **Frontend:** React 18, Vite, Tailwind CSS, Lucide React icons, deployed to **Firebase Hosting**.
-* **Backend:** **Python 3.11** Firebase Cloud Functions (`firebase_functions` v2) enforcing business logic, Sleeper synchronization, and The Odds API integration.
-* **Database:** **Google Cloud Firestore** (NoSQL real-time document database).
-* **External APIs:**
-  * **Sleeper API:** Public read-only REST endpoints (`/v1/league/<id>`, `/v1/league/<id>/users`, `/v1/league/<id>/rosters`, `/v1/league/<id>/matchups/<week>`).
-  * **The Odds API:** Free tier (500 requests/month) used with backend caching in Firestore to conserve credits.
+### External Integrations & Scalability
+* **Sleeper API:**
+  * Uses public endpoints: `/v1/league/<id>`, `/v1/league/<id>/users`, `/v1/league/<id>/rosters`, `/v1/league/<id>/matchups/<week>`.
+  * *Requirement:* The Sleeper league must be set to **Public** (default for fantasy leagues).
+* **The Odds API (Quota Management):**
+  * Free tier limit: 500 requests/month (~125 requests/week).
+  * **Client Isolation:** The frontend *never* calls The Odds API directly.
+  * **CRON Caching (Firebase Cloud Scheduler $\to$ Python Function):**
+    * Thursdays, Fridays, Saturdays: Fetched twice daily (e.g., 10:00 AM and 6:00 PM ET).
+    * Sundays: Hourly from 9:00 AM to 1:00 PM ET.
+    * Writes directly to `odds_cache/nfl` in Firestore. All client pickers read solely from this cache.
 
 ---
 
@@ -71,6 +74,8 @@ interface LeagueConfig {
   sleeper_league_id: string; // e.g. "112482394829384923"
   season: string;            // e.g. "2026"
   current_week: number;      // e.g. 4
+  league_salt: string;       // Unique salt for PIN hashing
+  requires_public_sleeper: boolean;
   updated_at: Timestamp;
 }
 ```
@@ -83,18 +88,24 @@ interface TeamProfile {
   owner_name: string;        // Sleeper display name
   team_name: string;         // Fantasy team name
   avatar_url: string;        // Avatar image URL
-  pin_hash: string;          // SHA-256 hash of 4-digit PIN
-  default_legs: DefaultLeg[];// Recurring intent-based fallback pool
+  pin_hash: string;          // SHA-256(raw_pin + league_salt)
+  default_legs: DefaultLeg[];// Intent-based fallback pool
+  historical_stats: {
+    legs_hit: number;
+    legs_missed: number;
+    legs_voided_or_pushed: number;
+    times_on_the_hook: number;
+  };
 }
 
 interface DefaultLeg {
   id: string;
-  nfl_team: string;          // e.g. "KC", "BAL", "PHI" (used for bye week validation)
+  nfl_team: string;          // e.g. "KC", "BAL", "PHI"
   market_type: 'moneyline' | 'spread' | 'game_total' | 'player_prop';
   player_name?: string;      // e.g. "Derrick Henry"
   prop_type?: 'rush_yds' | 'pass_yds' | 'rec_yds' | 'anytime_td';
-  direction?: 'over' | 'under'; // Snaps to weekly line automatically
-  description_template: string; // e.g. "Derrick Henry OVER Rush Yards" or "Chiefs Spread"
+  direction?: 'over' | 'under';
+  description_template: string; // e.g. "Derrick Henry OVER Rush Yards"
 }
 ```
 
@@ -104,6 +115,8 @@ interface WeeklyParlay {
   week: number;
   season: string;
   status: 'open' | 'locked';
+  resolution: 'pending' | 'won' | 'lost' | 'voided'; // Post-game tracking
+  contains_sgp: boolean;                  // True if multiple legs are from the same game
   bettor: {
     roster_id: number;
     team_name: string;
@@ -111,10 +124,12 @@ interface WeeklyParlay {
     points_last_week: number;
   };
   legs: ParlayLeg[];
-  estimated_odds_american: string; // e.g. "+1450"
-  estimated_multiplier: number;    // e.g. 15.50
-  estimated_payout: number;        // e.g. 77.50 ($5 * multiplier)
-  actual_payout: number | null;    // Bettor override from physical/digital slip
+  estimated_odds_american: string;        // e.g. "+1450"
+  estimated_multiplier: number;           // e.g. 15.50
+  estimated_payout: number;               // $5 * multiplier
+  actual_payout: number | null;           // Actual sportsbook payout override
+  actual_odds_american: string | null;    // Actual sportsbook odds
+  sportsbook_url?: string;                // Link to digital slip (DraftKings/FanDuel share link)
   finalized_at: Timestamp | null;
   finalized_by: {
     roster_id: number;
@@ -124,15 +139,20 @@ interface WeeklyParlay {
 }
 
 interface ParlayLeg {
+  id: string;
   roster_id: number;
   team_name: string;
   owner_name: string;
-  description: string;       // e.g. "Saquon Barkley OVER 78.5 Rush Yards"
-  nfl_team: string;          // e.g. "PHI"
-  odds_american: string;     // e.g. "-115"
-  odds_decimal: number;      // e.g. 1.87
-  is_default_roll: boolean;  // true if rolled automatically during finalization
+  game_id: string;                        // Unique game identifier for SGP detection
+  nfl_team: string;                       // e.g. "PHI"
+  description: string;                    // e.g. "Saquon Barkley OVER 78.5 Rush Yards"
+  odds_american: string;                  // e.g. "-115"
+  odds_decimal: number;                   // e.g. 1.87
+  is_default_roll: boolean;               // True if auto-selected during finalization
   status: 'pending' | 'submitted';
+  result_status: 'pending' | 'won' | 'lost' | 'voided' | 'push'; // Leg outcome
+  kickoff_time: Timestamp;                // Game commencement time
+  locked_at: Timestamp | null;            // Set when game kicks off or ticket is finalized
 }
 ```
 
@@ -141,148 +161,133 @@ interface ParlayLeg {
 interface OddsCache {
   week: number;
   last_fetched: Timestamp;
-  games: {
-    game_id: string;
-    home_team: string;
-    away_team: string;
-    commence_time: string;
-    spread: { home: number; away: number; home_odds: string; away_odds: string };
-    moneyline: { home_odds: string; away_odds: string };
-    total: { over_under: number; over_odds: string; under_odds: string };
-    player_props: {
-      player_name: string;
-      prop: string;
-      line: number;
-      over_odds?: string;
-      under_odds?: string;
-      odds?: string; // e.g. Anytime TD
-    }[];
+  games: CachedGame[];
+}
+
+interface CachedGame {
+  game_id: string;
+  home_team: string;
+  away_team: string;
+  commence_time: string; // ISO 8601
+  spread: { home: number; away: number; home_odds: string; away_odds: string };
+  moneyline: { home_odds: string; away_odds: string };
+  total: { over_under: number; over_odds: string; under_odds: string };
+  player_props: {
+    player_name: string;
+    prop: string;
+    line: number;
+    over_odds?: string;
+    under_odds?: string;
+    odds?: string;
   }[];
 }
 ```
 
 ---
 
-## 4. AuthN & AuthZ Model
+## 4. AuthN & AuthZ Architecture
 
-### 4.1 Zero-Friction Authentication (Team PINs)
-* **First Visit:** A user selects their team from the dropdown and sets a 4-digit PIN. The frontend computes `hash(pin + salt)` and stores it in Firestore, while saving the raw PIN in `localStorage`.
-* **Return Visits:** The app reads `localStorage`, automatically authenticates the user, and restores their session.
-* **Write Permissions:**
-  * Submitting/editing a weekly leg requires validating that `hash(pin)` matches `teams/{roster_id}.pin_hash`. Team A cannot edit Team B's pick or defaults.
-  * Public read-only access for viewing the current parlay slip and the past slips archive.
+### 4.1 Secure PIN Handling (No Plaintext Storage)
+1. **Entry:** During initial onboarding or login, the user enters their 4-digit PIN in the browser.
+2. **Hashing:** The frontend immediately computes:
+   $$\text{PIN\_Hash} = \text{SHA-256}(\text{raw\_pin} + \text{league\_salt})$$
+3. **Storage:**
+   * The **raw PIN is never saved** to `localStorage`, `sessionStorage`, or cookies. It exists only in transient memory during entry.
+   * `localStorage` stores exclusively `{ roster_id, pin_hash }`.
+4. **Backend Verification:**
+   * Any callable write function (`submit_leg`, `update_defaults`) requires `{ roster_id, pin_hash }`.
+   * The Cloud Function compares the incoming hash directly against `teams/{roster_id}.pin_hash`.
 
-### 4.2 Authorization & The "Break-Glass" Finalization
-* **The Weekly Bettor:**
-  * Has primary permission to finalize the ticket, trigger the default leg roll, and input actual sportsbook odds.
-* **Break-Glass Emergency Action:**
-  * If kickoff is approaching and the weekly bettor is unresponsive, **any verified league member** can click `"⚡ Break Glass: Finalize on Behalf of Bettor"`.
-  * The backend validates that the user is a valid league member, executes the finalization roll, and sets:
-    ```json
-    "finalized_by": {
-      "roster_id": 4,
-      "owner_name": "Dave",
-      "is_break_glass": true
-    }
-    ```
-  * Full audit transparency is displayed on the ticket and included in the Sleeper group chat export.
+### 4.2 Authorization Matrix
+* **Public Read:** Anyone with the league URL can view the current week parlay, leg status, and past slips archive.
+* **Member Writes:** Validating `pin_hash` grants write access strictly to that specific `roster_id`'s pick and default pool.
+* **Bettor Finalization:** The active bettor's `roster_id` has primary authority to finalize the ticket and roll defaults.
+* **Break-Glass Finalization:** Any valid member can trigger `finalize_parlay` if the bettor is unavailable. The backend logs `is_break_glass: true` with the executor's identity.
 
 ---
 
-## 5. Detailed Feature Specifications
+## 5. Domain Logic & Betting Mechanics
 
-### 5.1 Bettor Identification & Tuesday Sync
-* **Algorithm (`sync_sleeper`):**
-  1. Calls Sleeper API `/v1/league/<league_id>/matchups/<prev_week>`.
-  2. Parses each roster's `points` field.
-  3. Finds the minimum score: `min(roster.points)`.
-  4. In the event of a tie, the team with the lower season-to-date total points is selected (or coin flip).
-  5. Sets the loser as `bettor` for the new `week` ticket in `open` status.
-  * *Week 1 Rule:* For Week 1, the app displays a prompt allowing the league to pick who holds the opening week bet (defaulting to last year's loser or commissioner).
+### 5.1 Deterministic Bettor Selection (Tuesday Sync)
+To avoid any ambiguity or league arguments over who is on the hook, the lowest-scoring team is determined by a strict 4-level hierarchy:
+1. **Lowest Weekly Points Scored:** The team with the minimum fantasy points in that week's matchup.
+2. **Lowest Season-to-Date Points For (PF):** In case of a tie, the team with fewer cumulative season points is the bettor.
+3. **Lowest "Max PF" (Potential Points):** If still tied, the team with lower optimal/max points for the season.
+4. **Alphabetical by Team Name:** Absolute deterministic tie-breaker fallback.
 
-### 5.2 Weekly Pick Submission (Active Pick)
-Users have full freedom when submitting their weekly leg:
-* **Option A: Live Market Picker (Auto-Odds):**
-  * Select Game Line (Moneyline, Spread, Total) or Player Prop (Anytime TD, Rush/Pass/Rec Yds).
-  * Filter by NFL team or search by player.
-  * Line and odds auto-populate from cached odds data.
-* **Option B: Custom Line / Alternate Milestones:**
-  * User can customize the target value (e.g. adjust a 68.5 yard line to 100+ yards).
-  * Or type freeform text (e.g., *"Eagles score 3+ rushing touchdowns"*), select the NFL team tag, and enter estimated odds (defaulting to `-110`).
+*Week 1 Exception:* In Week 1 (no prior scores), the league prompt defaults the bettor to last year's last-place finisher or allows an on-screen selection before games kick off.
 
-### 5.3 Intent-Based Default Legs Pool
-* Each team can save 3–5 recurring defaults in **"My Default Pool"**.
-* Instead of static numbers, defaults store **Market Intent**:
-  * *Spread Intent:* Team + Spread (snaps to whatever the spread is on game week).
-  * *Total Intent:* Game + Over/Under (snaps to game total).
-  * *Player Prop Intent:* Player + Prop Type (e.g., Derrick Henry + Rush Yards OVER, Saquon Barkley + Anytime TD).
-  * *Custom Intent:* Custom text with mandatory NFL team tag.
+### 5.2 Partial Locking & Thursday Night Football (TNF)
+* **Individual Leg Locks:**
+  * Every leg tracks `kickoff_time`.
+  * If a member selects a Thursday Night Football leg, their individual leg locks at TNF kickoff (`locked_at = kickoff_time`).
+  * Other league members whose games are on Sunday/Monday can continue to submit or edit their picks until their respective games commence.
+* **Preserving TNF Legs on Finalization:**
+  * When the bettor (or break-glass user) clicks "Finalize Parlay" on Sunday morning:
+    * The engine inspects all legs.
+    * Any leg already locked (e.g. TNF pick) is **strictly preserved**.
+    * Defaults are rolled only for teams that still have no pick submitted.
 
-### 5.4 The Finalization & Roll Engine (`finalize_parlay`)
-When the Bettor (or Break-Glass user) clicks Finalize:
-1. For every league roster that has not submitted a pick:
-   * Load `teams/{roster_id}.default_legs`.
-   * **Bye-Week Filter:** Query current week NFL schedule; discard any leg where `nfl_team` is on bye.
-   * **Kickoff Filter:** Discard any leg whose game has already kicked off.
-   * **Random Selection:** Select one leg at random from remaining eligible options using `random.choice()`.
-   * **Line Snapping:** If it's a spread, total, or player prop, lookup the live line from the cached odds table and format the description (e.g., *"Derrick Henry OVER 74.5 Rush Yds (-115)"*).
-   * **Fallback:** If all defaults are on bye or none were configured, record as `"No Pick Submitted (All Defaults on Bye)"` without blocking the parlay.
-2. Recalculate combined odds and payout.
-3. Lock parlay ticket (`status: 'locked'`).
+### 5.3 Same Game Parlay (SGP) Mechanics & Mathematical Warnings
+* **Correlation Detection:**
+  * The backend checks `game_id` across all submitted and rolled legs.
+  * If two or more legs share the same `game_id` (e.g., *Patrick Mahomes OVER 250 Pass Yds* + *Travis Kelce Anytime TD*), the parlay sets:
+    $$\text{contains\_sgp} = \text{true}$$
+* **UI Payout Banner & Divergence Warning:**
+  * If `contains_sgp == true`, the app displays a prominent amber badge:
+    > ⚠️ **Same Game Parlay (SGP) Detected**  
+    > Multiple legs are from the same game. Standard parlay odds calculation produces an inflated estimate (+4200) that sportsbooks will discount. Check your sportsbook app for the true payout.
+* **Sportsbook Digital Slip Link & Override:**
+  * The bettor can enter the actual combined odds, actual payout, and optionally paste their sportsbook share link (`sportsbook_url`), which replaces the estimate on the finalized slip.
 
-### 5.5 Parlay Odds Calculation & Estimation Badge
-* **Math Formula:**
-  * Convert American odds to Decimal:
-    $$\text{Positive (+X): } D = \frac{X}{100} + 1$$
-    $$\text{Negative (-X): } D = \frac{100}{|X|} + 1$$
-  * Total Multiplier: $M = \prod_{i=1}^n D_i$
-  * American Odds Display:
-    $$\text{If } M \ge 2.0: A = \text{round}((M - 1) \times 100)$$
-    $$\text{If } M < 2.0: A = \text{round}\left(\frac{-100}{M - 1}\right)$$
-  * Estimated \$5 Payout: $\$5 \times M$
-* **Disclaimer Badge:** UI explicitly labels:
-  > **Estimated Payout: \$84.20 (+1584)**  
-  > *Note: Actual sportsbook payout may vary slightly if multiple legs are in the same game (SGP correlation).*
-* **Sportsbook Override:** The bettor can input the exact sportsbook ticket payout/odds upon placing the bet, updating the finalized slip.
+### 5.4 Intent-Based Default Legs & Dynamic Line Snapping
+* **Intent Definition:** Default legs specify market type and direction, not static numbers:
+  * Team Spread: *Chiefs Spread* $\to$ snaps to weekly line (e.g., `-3.5` or `-7.0`).
+  * Team Total: *Lions Total OVER* $\to$ snaps to weekly game total (e.g., `Over 51.5`).
+  * Player Prop: *Derrick Henry Rush Yards OVER* $\to$ snaps to weekly line (e.g., `Over 74.5`).
+  * Anytime TD: *Saquon Barkley Anytime TD* $\to$ snaps to weekly odds.
+* **Eligibility Filters:**
+  1. NFL team must not be on a bye week.
+  2. Game must not have kicked off yet.
+  3. Team must not be already represented if the league enforces unique games.
+* **Weekly Pick Freedom:** While default legs snap to market lines, **active weekly picks** allow full user freedom: standard lines, alternate lines (e.g., *Henry 100+ yards*), or custom prop descriptions with estimated odds.
 
-### 5.6 Sleeper League Chat Exporter
-With one click, formats the finalized ticket for the Sleeper group chat:
-```markdown
-🏈 WEEK 4 TEAM PARLAY 🏈
-Bettor: @Dave (Lowest Score: 78.4 pts)
-Stake: $5.00 | Est. Payout: $84.20 (+1584)
-
-1. Blake: Ravens ML (-130)
-2. Mike: Saquon Barkley Anytime TD (-115)
-3. Chris: Lions @ Cardinals OVER 51.5 (-110)
-4. Dave (Default Roll 🎲): Derrick Henry OVER 74.5 Rush Yds (-115)
-...
-Ticket locked. LFG! 🚀
-```
-
-### 5.7 Past Slips Archive
-* Simple tab/drawer showing all completed weeks (`week < current_week`).
-* Displays each week's bettor, final legs, odds, payout, and whether it was finalized standard or via break-glass.
+### 5.5 Post-Game Resolution & Void/Push Handling
+* **Leg Outcomes (`result_status`):**
+  * `won`: Leg hit.
+  * `lost`: Leg missed.
+  * `voided`: Player did not play (inactive) $\to$ removed from multiplier calculation.
+  * `push`: Exact tie on whole-number spread/total $\to$ removed from multiplier (reduces parlay by 1 leg).
+* **Overall Parlay Resolution (`resolution`):**
+  * If any active leg is `lost` $\to$ Parlay `lost`.
+  * If all active legs are `won` (or `voided`/`push`) $\to$ Parlay `won`.
+  * Updates team records in `teams/{roster_id}.historical_stats` (`legs_hit`, `legs_missed`, `legs_voided_or_pushed`).
 
 ---
 
 ## 6. Testing & Verification Strategy
 
-### 6.1 Automated Tests
+### 6.1 Automated Test Suite
 * **`test_sleeper_sync.py`:**
-  * Mock Sleeper matchups endpoint; verify lowest score detection and tie-breaking.
-  * Test Week 1 fallback when matchup history is empty.
+  * Test lowest-score detection.
+  * Test 4-tier tie-breaker hierarchy (Weekly Pts $\to$ Season PF $\to$ Max PF $\to$ Alphabetical).
+  * Test Week 1 initialization.
 * **`test_parlay_math.py`:**
-  * Test conversion of American odds (`-110`, `+150`, `-250`) to decimal.
-  * Verify compound multiplier math against known multi-leg sportsbook parlays.
-* **`test_default_roll.py`:**
-  * Simulate bye-week scenarios: ensure a player on bye is never selected.
-  * Simulate post-kickoff scenarios: ensure a completed Thursday night game is excluded.
-  * Test line snapping from market intent to live week lines.
-* **`test_authz.py`:**
-  * Verify PIN validation: Team A cannot modify Team B's pick or defaults.
-  * Test break-glass recording in the finalization payload.
+  * American to Decimal conversion accuracy across positive and negative odds.
+  * Compound parlay multiplier and \$5 payout math.
+  * SGP detection logic: asserts `contains_sgp == true` when two legs share a `game_id`.
+  * Void/Push reduction: verifies that a voided leg correctly drops the multiplier without busting the parlay.
+* **`test_locking_and_defaults.py`:**
+  * Partial lock test: confirms TNF leg is locked at kickoff and cannot be edited by the user.
+  * Sunday finalization test: confirms previously locked TNF leg is preserved during default rolls.
+  * Bye-week & post-kickoff exclusion for default pool items.
+  * Dynamic line snapping from cached odds table.
+* **`test_security_and_auth.py`:**
+  * Verify that raw PIN is never transmitted or stored.
+  * Verify SHA-256 + salt matching in Cloud Functions.
+  * Assert Team A hash cannot modify Team B's pick or defaults.
+  * Verify break-glass execution records audit metadata.
 
-### 6.2 Manual Verification
-* Deploy to Firebase Emulator suite (Functions + Firestore + Hosting).
-* Simulate full weekly cycle: Sleeper sync $\to$ pick submissions $\to$ default rolls $\to$ parlay lock $\to$ chat export.
+### 6.2 Manual & Emulator Verification
+* Run Firebase Local Emulator Suite (Firestore, Functions, Hosting).
+* Simulate full weekly progression: Tuesday Sleeper sync $\to$ Thursday TNF pick & partial lock $\to$ Sunday roll of missing defaults $\to$ SGP warning validation $\to$ game result grading $\to$ archive view.
