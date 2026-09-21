@@ -24,6 +24,7 @@ import { PastSlipsArchive } from './components/PastSlipsArchive';
 import { WeeklyParlay, ActivePlayer, TeamProfile, ParlayLeg, DefaultLeg } from './types';
 import { saveSession, getSession } from './services/auth';
 import { calculateParlayStats } from './utils/parlayMath';
+import { isTeamMissingDefaults, getTeamDefaults } from './utils/defaultPoolUtils';
 
 // Mock Master Database of active offensive NFL players from Sleeper
 const MOCK_ACTIVE_PLAYERS: ActivePlayer[] = [
@@ -552,11 +553,11 @@ export const App: React.FC = () => {
               )}
 
               {/* Manage Fallback Pool shortcut */}
-              {(!currentTeam.default_legs || currentTeam.default_legs.length === 0) ? (
+              {isTeamMissingDefaults(currentTeam) ? (
                 <button
                   type="button"
                   onClick={() => setIsDefaultPoolOpen(true)}
-                  className="w-full py-2 px-3 rounded-lg border border-amber-500/40 bg-amber-950/20 text-amber-300 hover:bg-amber-950/30 hover:border-amber-500/60 text-xs font-semibold transition flex items-center justify-center space-x-1.5"
+                  className="w-full min-h-[44px] py-2 px-3 rounded-lg border border-amber-500/40 bg-amber-950/20 text-amber-300 hover:bg-amber-950/30 hover:border-amber-500/60 text-xs font-semibold transition flex items-center justify-center space-x-1.5"
                 >
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                   <span>Set Up Fallback Pool (0/5 rules - At Risk)</span>
@@ -565,10 +566,10 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsDefaultPoolOpen(true)}
-                  className="w-full py-2 px-3 rounded-lg bg-sleeper-dark border border-sleeper-border text-xs font-semibold text-gray-300 hover:text-white hover:border-gray-500 transition flex items-center justify-center space-x-1.5"
+                  className="w-full min-h-[44px] py-2 px-3 rounded-lg bg-sleeper-dark border border-sleeper-border text-xs font-semibold text-gray-300 hover:text-white hover:border-gray-500 transition flex items-center justify-center space-x-1.5"
                 >
                   <Dice5 className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                  <span>Configure Fallback Pool ({currentTeam.default_legs.length}/5 rules)</span>
+                  <span>Configure Fallback Pool ({getTeamDefaults(currentTeam).length}/5 rules)</span>
                 </button>
               )}
             </div>
