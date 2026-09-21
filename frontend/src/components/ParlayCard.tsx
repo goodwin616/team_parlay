@@ -182,9 +182,13 @@ export const ParlayCard: React.FC<Props> = ({
 
                     {/* Auto-Rolled Default Badge */}
                     {leg.is_default_roll && (
-                      <span className="inline-flex items-center space-x-1 px-1.5 py-0.2 text-[10px] font-bold rounded bg-purple-900/50 border border-purple-600/60 text-purple-200">
-                        <Dice5 className="w-3 h-3 text-purple-300" />
-                        <span>🎲 Default</span>
+                      <span 
+                        title="Auto-rolled from fallback default pool" 
+                        aria-label="Auto-rolled from fallback default pool"
+                        className="inline-flex items-center justify-center p-1 rounded bg-purple-900/50 border border-purple-600/60 text-purple-300 hover:bg-purple-800/60 transition cursor-help"
+                      >
+                        <Dice5 className="w-3.5 h-3.5 text-purple-300" />
+                        <span className="sr-only">Auto-rolled from default pool</span>
                       </span>
                     )}
 

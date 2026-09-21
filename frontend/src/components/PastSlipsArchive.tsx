@@ -105,9 +105,13 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                                 <span className="font-semibold text-white truncate">{leg.owner_name}</span>
                                 <span className="text-[10px] text-sleeper-muted">({leg.team_name})</span>
                                 {leg.is_default_roll && (
-                                  <span className="inline-flex items-center space-x-1 px-1.5 py-0.2 text-[9px] font-bold rounded bg-purple-900/40 text-purple-300 border border-purple-800">
-                                    <Dice5 className="w-2.5 h-2.5" />
-                                    <span>🎲 Default</span>
+                                  <span 
+                                    title="Auto-rolled from fallback default pool" 
+                                    aria-label="Auto-rolled from fallback default pool"
+                                    className="inline-flex items-center justify-center p-0.5 rounded bg-purple-900/40 text-purple-300 border border-purple-800 hover:bg-purple-800/50 transition cursor-help"
+                                  >
+                                    <Dice5 className="w-3 h-3 text-purple-300" />
+                                    <span className="sr-only">Auto-rolled from default pool</span>
                                   </span>
                                 )}
                               </div>
