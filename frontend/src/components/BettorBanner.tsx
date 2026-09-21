@@ -17,9 +17,9 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
       {/* Decorative accent glow */}
       <div className="absolute top-0 right-0 -mr-8 -mt-8 w-24 h-24 rounded-full bg-sleeper-accent/10 blur-xl pointer-events-none" />
 
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start space-x-3">
-          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 mt-0.5 shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start sm:items-center space-x-3.5">
+          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 shrink-0">
             <AlertCircle className="w-5 h-5" />
           </div>
           <div>
@@ -31,11 +31,11 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
                 Lowest Scorer
               </span>
             </div>
-            <h2 className="text-base font-extrabold text-white mt-0.5">
+            <h2 className="text-base sm:text-lg font-extrabold text-white mt-0.5">
               {bettor.team_name}{' '}
               <span className="text-sleeper-muted font-normal">({bettor.owner_name})</span>
             </h2>
-            <div className="flex items-center space-x-2 mt-1 text-xs text-gray-300">
+            <div className="flex items-center space-x-2 mt-1 text-xs text-gray-300 flex-wrap">
               <span className="font-mono text-red-300 font-bold bg-red-950/50 px-1.5 py-0.5 rounded border border-red-800/40">
                 {bettor.points_last_week.toFixed(1)} pts
               </span>
@@ -46,8 +46,8 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
           </div>
         </div>
 
-        <div className="shrink-0 flex flex-col items-end">
-          <div className="flex items-center space-x-1 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-xs">
+        <div className="shrink-0 flex sm:flex-col items-start sm:items-end justify-between sm:justify-center border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0">
+          <div className="flex items-center space-x-1 px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-xs">
             <DollarSign className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Stake Due: $5.00</span>
           </div>

@@ -17,7 +17,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl my-auto">
+      <div className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-lg sm:max-w-xl lg:max-w-2xl overflow-hidden shadow-2xl my-auto">
         {/* Header */}
         <div className="flex justify-between items-center px-5 py-4 border-b border-sleeper-border bg-sleeper-card">
           <div className="flex items-center space-x-2">

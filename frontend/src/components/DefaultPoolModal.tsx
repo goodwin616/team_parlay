@@ -157,7 +157,7 @@ export const DefaultPoolModal: React.FC<Props> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm overflow-y-auto animate-fadeIn">
-      <div className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl my-auto">
+      <div className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-lg sm:max-w-xl lg:max-w-2xl overflow-hidden shadow-2xl my-auto">
         {/* Header */}
         <div className="flex justify-between items-center px-5 py-4 border-b border-sleeper-border bg-sleeper-card">
           <div>
