@@ -422,40 +422,51 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-sleeper-dark text-white selection:bg-sleeper-accent selection:text-black">
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-sleeper-card/90 backdrop-blur-md border-b border-sleeper-border px-4 py-3">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+      <header className="sticky top-0 z-40 bg-sleeper-card/90 backdrop-blur-md border-b border-sleeper-border px-3 sm:px-4 py-2.5 sm:py-3">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
+          {/* Brand Logo & Name */}
+          <div className="flex items-center space-x-2 shrink-0">
             <span className="text-xl">🏈</span>
             <div>
-              <h1 className="text-sm font-black tracking-wider text-white leading-none">
+              <h1 className="text-xs sm:text-sm font-black tracking-wider text-white leading-none">
                 TEAM PARLAY
               </h1>
-              <span className="text-[10px] font-bold text-sleeper-accent tracking-widest uppercase">
+              <span className="text-[9px] sm:text-[10px] font-bold text-sleeper-accent tracking-widest uppercase">
                 Sleeper League
               </span>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* Action Pills */}
+          <div className="flex items-center space-x-2 shrink-0">
+            {/* Archive Button: Compact icon on small screens, expands on sm+ */}
             <button
               onClick={() => setIsArchiveOpen(true)}
-              className="px-3 py-1.5 rounded-lg bg-sleeper-dark border border-sleeper-border text-xs font-semibold text-gray-300 hover:text-white hover:border-gray-500 transition flex items-center space-x-1.5"
+              aria-label="View Past Slips Archive"
+              className="min-h-[40px] min-w-[40px] sm:min-h-[36px] sm:min-w-0 px-2.5 sm:px-3 py-1.5 rounded-xl bg-sleeper-dark border border-sleeper-border text-xs font-semibold text-gray-300 hover:text-white hover:border-gray-500 transition flex items-center justify-center space-x-1.5 active:scale-95 shadow-sm"
+              title="Past Slips Archive"
             >
-              <History className="w-3.5 h-3.5 text-sleeper-accent" />
-              <span>Archive</span>
+              <History className="w-4 h-4 text-sleeper-accent shrink-0" />
+              <span className="hidden sm:inline">Archive</span>
             </button>
 
-            {/* Authenticated Team Pill */}
+            {/* Authenticated Team Pill: Compact owner name on mobile, full name + team on sm+ */}
             <button
               onClick={() => {
                 setAuthSelectedRoster(currentRosterId);
                 setIsAuthModalOpen(true);
               }}
-              className="px-3 py-1.5 rounded-lg bg-sleeper-accent/15 border border-sleeper-accent/40 text-xs font-bold text-sleeper-accent hover:bg-sleeper-accent/25 transition flex items-center space-x-1.5"
+              aria-label={`Switch Team: currently authenticated as ${currentTeam.owner_name}`}
+              className="min-h-[40px] sm:min-h-[36px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-sleeper-accent/15 border border-sleeper-accent/40 text-xs font-bold text-sleeper-accent hover:bg-sleeper-accent/25 transition flex items-center space-x-1.5 active:scale-95 shadow-sm"
               title="Click to Switch Team / Re-Auth"
             >
-              <UserCheck className="w-3.5 h-3.5" />
-              <span className="truncate max-w-[90px] sm:max-w-none">{currentTeam.owner_name} ({currentTeam.team_name})</span>
+              <UserCheck className="w-4 h-4 shrink-0" />
+              <span className="truncate max-w-[70px] xs:max-w-[100px] sm:max-w-[140px] md:max-w-none">
+                {currentTeam.owner_name}
+              </span>
+              <span className="hidden sm:inline text-sleeper-accent/70 font-normal">
+                ({currentTeam.team_name})
+              </span>
             </button>
           </div>
         </div>

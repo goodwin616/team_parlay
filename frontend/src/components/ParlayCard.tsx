@@ -160,25 +160,30 @@ export const ParlayCard: React.FC<Props> = ({
         {parlay.legs.map((leg, index) => {
           const isCurrentUserLeg = currentRosterId !== null && leg.roster_id === currentRosterId;
           const isSubmitted = leg.status === 'submitted';
+          const canEdit = parlay.status === 'open' && isCurrentUserLeg;
 
           return (
             <div
               key={leg.id || `leg-${index}`}
+              onClick={canEdit ? () => onOpenPickModal(leg) : undefined}
               className={`p-3.5 flex items-center justify-between transition ${
-                isCurrentUserLeg ? 'bg-sleeper-accent/5' : 'hover:bg-white/[0.02]'
-              } ${!isSubmitted ? 'opacity-70 hover:opacity-90 bg-white/[0.01]' : ''}`}
+                canEdit ? 'cursor-pointer hover:bg-sleeper-accent/10 active:scale-[0.995]' : ''
+              } ${
+                isCurrentUserLeg && !canEdit ? 'bg-sleeper-accent/5' : !canEdit ? 'hover:bg-white/[0.02]' : ''
+              } ${isCurrentUserLeg && canEdit ? 'bg-sleeper-accent/5' : ''}`}
+              title={canEdit ? 'Tap to edit your pick' : undefined}
             >
               <div className="flex items-start space-x-3 min-w-0 pr-2">
                 <div className="mt-0.5 shrink-0">
                   {isSubmitted ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   ) : (
-                    <CircleDashed className="w-4 h-4 text-amber-400/80 animate-pulse" />
+                    <CircleDashed className="w-4 h-4 text-amber-400 animate-pulse" />
                   )}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                    <span className={`text-xs font-bold truncate ${isSubmitted ? 'text-white' : 'text-gray-300'}`}>
+                    <span className="text-xs font-bold text-white truncate">
                       {leg.owner_name}
                     </span>
                     <span className="text-[10px] text-sleeper-muted truncate">
@@ -197,6 +202,12 @@ export const ParlayCard: React.FC<Props> = ({
                       </span>
                     )}
 
+                    {!isSubmitted && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono">
+                        Waiting
+                      </span>
+                    )}
+
                     {isCurrentUserLeg && (
                       <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-sleeper-accent/20 text-sleeper-accent">
                         You
@@ -205,7 +216,7 @@ export const ParlayCard: React.FC<Props> = ({
                   </div>
 
                   <p className={`text-xs mt-1 leading-snug break-words ${
-                    isSubmitted ? 'font-medium text-gray-200' : 'italic text-gray-400 font-normal'
+                    isSubmitted ? 'font-medium text-gray-200' : 'italic text-gray-300 font-normal'
                   }`}>
                     {leg.description}
                   </p>
@@ -221,20 +232,24 @@ export const ParlayCard: React.FC<Props> = ({
                 ) : (
                   <span 
                     title="Waiting for pick submission (will snap from fallback default pool if deadline passes)"
-                    className="font-mono text-[11px] font-medium px-2 py-0.5 rounded bg-sleeper-dark/40 border border-dashed border-gray-700 text-gray-400"
+                    className="font-mono text-xs font-semibold px-2 py-1 rounded bg-sleeper-dark border border-dashed border-gray-600 text-gray-300"
                   >
                     TBD
                   </span>
                 )}
 
-                {parlay.status === 'open' && isCurrentUserLeg && (
+                {canEdit && (
                   <button
                     type="button"
-                    onClick={() => onOpenPickModal(leg)}
-                    className="p-1.5 rounded-lg bg-sleeper-dark border border-sleeper-border text-gray-300 hover:text-white hover:border-sleeper-accent transition"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenPickModal(leg);
+                    }}
+                    className="min-w-[44px] min-h-[44px] p-2 rounded-xl bg-sleeper-accent/15 border border-sleeper-accent/40 text-sleeper-accent hover:bg-sleeper-accent/25 active:bg-sleeper-accent/30 transition flex items-center justify-center shadow-sm active:scale-95"
                     title="Edit Your Leg"
+                    aria-label="Edit Your Leg"
                   >
-                    <Edit3 className="w-3.5 h-3.5" />
+                    <Edit3 className="w-4 h-4" />
                   </button>
                 )}
               </div>
@@ -258,17 +273,16 @@ export const ParlayCard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Fallback Pool Manager Trigger */}
+      {/* Fallback Pool Manager Trigger - Full-width 44px button */}
       {onOpenDefaultPool && (
-        <div className="px-4 py-2.5 bg-sleeper-dark/90 border-t border-sleeper-border flex items-center justify-between text-xs">
-          <span className="text-gray-400">Can't submit before kickoff?</span>
+        <div className="p-3 sm:p-3.5 bg-sleeper-dark/90 border-t border-sleeper-border">
           <button
             type="button"
             onClick={onOpenDefaultPool}
-            className="text-sleeper-accent hover:underline font-bold flex items-center space-x-1"
+            className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-purple-950/40 hover:bg-purple-900/50 active:bg-purple-900/70 border border-purple-500/40 text-purple-200 hover:text-white font-bold text-xs transition flex items-center justify-center space-x-2 shadow-sm active:scale-[0.99]"
           >
-            <Dice5 className="w-3.5 h-3.5" />
-            <span>Manage Fallback Pool</span>
+            <Dice5 className="w-4 h-4 text-purple-300 shrink-0" />
+            <span>Manage Fallback Rules (3–5 Slots)</span>
           </button>
         </div>
       )}
