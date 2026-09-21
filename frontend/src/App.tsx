@@ -7,7 +7,10 @@ import {
   KeyRound, 
   X, 
   PlusCircle, 
-  RefreshCw 
+  RefreshCw,
+  CircleDashed,
+  Dice5,
+  CheckCircle2
 } from 'lucide-react';
 import { BettorBanner } from './components/BettorBanner';
 import { ParlayCard } from './components/ParlayCard';
@@ -480,9 +483,9 @@ export const App: React.FC = () => {
 
           {/* Sidebar: Primary Actions, Status, and Sleeper Chat Export */}
           <aside className="lg:col-span-5 xl:col-span-4 space-y-4 lg:sticky lg:top-20">
-            {/* Team Actions Card */}
-            <div className="p-4 rounded-2xl bg-sleeper-card border border-sleeper-border shadow-md">
-              <div className="flex items-center justify-between mb-3 pb-2 border-b border-sleeper-border/60">
+            {/* 1. Team Actions Card (Routine Primary Actions) */}
+            <div className="p-4 rounded-2xl bg-sleeper-card border border-sleeper-border shadow-md space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-sleeper-border/60">
                 <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">
                   Your Team Action
                 </span>
@@ -491,73 +494,131 @@ export const App: React.FC = () => {
                 </span>
               </div>
 
-              {/* Action Buttons */}
-              <div className="space-y-3">
-                {/* Submit / Edit Leg CTA Button if Parlay is Open */}
-                {parlay.status === 'open' && (
-                  <button
-                    onClick={() => {
-                      const userLeg = parlay.legs.find(l => l.roster_id === currentRosterId);
-                      setEditingLeg(userLeg);
-                      setIsPickOpen(true);
-                    }}
-                    className="w-full py-3 px-4 rounded-xl bg-sleeper-accent text-black font-black text-sm hover:brightness-110 active:scale-[0.99] transition shadow-lg shadow-sleeper-accent/20 flex items-center justify-center space-x-2"
-                  >
-                    <PlusCircle className="w-4 h-4" />
-                    <span>Submit / Edit Your Leg</span>
-                  </button>
-                )}
-
-                {/* Finalize Parlay Button: Bettor vs Break-Glass */}
-                {parlay.status === 'open' && (
-                  <div>
-                    {isCurrentBettor ? (
-                      <button
-                        onClick={() => setIsBreakGlassOpen(true)}
-                        className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/20 flex items-center justify-center space-x-2"
-                      >
-                        <Lock className="w-4 h-4" />
-                        <span>Finalize Parlay Slip & Roll Defaults</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setIsBreakGlassOpen(true)}
-                        className="w-full py-2.5 px-4 rounded-xl bg-red-950/40 border border-red-500/40 hover:bg-red-900/50 text-red-300 font-bold text-xs transition flex items-center justify-center space-x-2"
-                      >
-                        <ShieldAlert className="w-4 h-4 text-red-400" />
-                        <span>⚡ Break Glass: Finalize on Behalf of {parlay.bettor.owner_name}</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Locked Notice if Parlay is Locked */}
-                {parlay.status === 'locked' && (
-                  <div className="p-3.5 rounded-xl bg-sleeper-dark border border-sleeper-border text-center">
-                    <div className="flex items-center justify-center space-x-2 text-xs text-gray-300 font-semibold mb-1">
-                      <Lock className="w-4 h-4 text-sleeper-accent" />
-                      <span>Ticket is Locked for Week {parlay.week}</span>
+              {/* Status Snippet for Current User */}
+              {(() => {
+                const userLeg = parlay.legs.find(l => l.roster_id === currentRosterId);
+                const isSubmitted = userLeg?.status === 'submitted';
+                return isSubmitted ? (
+                  <div className="p-2.5 rounded-xl bg-sleeper-dark border border-sleeper-border text-xs flex items-center justify-between">
+                    <div className="min-w-0 pr-2">
+                      <div className="flex items-center space-x-1.5 text-[10px] uppercase font-bold text-emerald-400 mb-0.5">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span>Pick Submitted</span>
+                      </div>
+                      <span className="font-semibold text-white truncate block">
+                        {userLeg.description}
+                      </span>
                     </div>
-                    <p className="text-[11px] text-sleeper-muted">
-                      {parlay.finalized_by?.is_break_glass
-                        ? `Emergency override executed by ${parlay.finalized_by.owner_name}.`
-                        : `Finalized by ${parlay.bettor.owner_name}.`}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleResetTestParlay}
-                      className="mt-2 text-[11px] text-sleeper-accent hover:underline inline-flex items-center space-x-1"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      <span>Reset demo state to open</span>
-                    </button>
+                    <span className="font-mono font-bold text-sleeper-accent text-xs shrink-0">
+                      {userLeg.odds_american}
+                    </span>
                   </div>
-                )}
-              </div>
+                ) : (
+                  <div className="p-2.5 rounded-xl bg-amber-950/30 border border-amber-800/40 text-xs text-amber-200 flex items-center space-x-2">
+                    <CircleDashed className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />
+                    <span>No pick submitted yet. Pick before kickoff or fallback rolls automatically.</span>
+                  </div>
+                );
+              })()}
+
+              {/* Submit / Edit Leg CTA Button if Parlay is Open */}
+              {parlay.status === 'open' && (
+                <button
+                  onClick={() => {
+                    const userLeg = parlay.legs.find(l => l.roster_id === currentRosterId);
+                    setEditingLeg(userLeg);
+                    setIsPickOpen(true);
+                  }}
+                  className="w-full py-3 px-4 rounded-xl bg-sleeper-accent text-black font-black text-sm hover:brightness-110 active:scale-[0.99] transition shadow-lg shadow-sleeper-accent/20 flex items-center justify-center space-x-2"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Submit / Edit Your Leg</span>
+                </button>
+              )}
+
+              {/* Manage Fallback Pool shortcut */}
+              <button
+                type="button"
+                onClick={() => setIsDefaultPoolOpen(true)}
+                className="w-full py-2 px-3 rounded-lg bg-sleeper-dark border border-sleeper-border text-xs font-semibold text-gray-300 hover:text-white hover:border-gray-500 transition flex items-center justify-center space-x-1.5"
+              >
+                <Dice5 className="w-3.5 h-3.5 text-purple-400" />
+                <span>Configure Fallback Pool ({currentTeam.default_legs?.length || 0}/5 rules)</span>
+              </button>
             </div>
 
-            {/* Sleeper Chat Exporter Card */}
+            {/* 2. Sleeper Chat Exporter Card (Routine Social Export) */}
             <SleeperChatExport parlay={parlay} />
+
+            {/* 3. Ticket Finalization & Emergency Override Card (Isolated at bottom to prevent accidental clicks) */}
+            <div className="p-4 rounded-2xl bg-sleeper-card border border-sleeper-border shadow-md space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-sleeper-border/60">
+                <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">
+                  Ticket Finalization
+                </span>
+                <span className="text-[10px] text-sleeper-muted font-mono">
+                  {parlay.status === 'open' ? 'Awaiting Lock' : 'Locked'}
+                </span>
+              </div>
+
+              {parlay.status === 'open' ? (
+                isCurrentBettor ? (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center space-x-1.5 text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>👑 Weekly Bettor Action</span>
+                    </div>
+                    <p className="text-[11px] text-gray-300 leading-normal">
+                      You are on the hook for this week's \$5 stake. Finalizing will immediately lock the ticket and auto-roll any unsubmitted member picks.
+                    </p>
+                    <button
+                      onClick={() => setIsBreakGlassOpen(true)}
+                      className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/20 flex items-center justify-center space-x-2"
+                    >
+                      <Lock className="w-4 h-4" />
+                      <span>Finalize Parlay Slip & Roll Defaults</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center space-x-2 text-xs font-black uppercase tracking-wider text-red-400">
+                      <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
+                      <span>Emergency Override</span>
+                    </div>
+                    <p className="text-[11px] text-gray-300 leading-normal">
+                      Use only if this week's bettor (<strong>{parlay.bettor.owner_name}</strong>) is unreachable before kickoff.
+                    </p>
+                    <button
+                      onClick={() => setIsBreakGlassOpen(true)}
+                      className="w-full py-2.5 px-4 rounded-xl bg-red-600/20 hover:bg-red-600/30 border-2 border-red-500 hover:border-red-400 text-red-100 hover:text-white font-black text-xs transition flex items-center justify-center space-x-2 shadow-sm shadow-red-950/60 active:scale-[0.99]"
+                    >
+                      <ShieldAlert className="w-4 h-4 text-red-400" />
+                      <span>⚡ Break Glass: Finalize on Behalf of {parlay.bettor.owner_name}</span>
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div className="p-3.5 rounded-xl bg-sleeper-dark border border-sleeper-border text-center space-y-1.5">
+                  <div className="flex items-center justify-center space-x-2 text-xs text-gray-300 font-semibold">
+                    <Lock className="w-4 h-4 text-sleeper-accent" />
+                    <span>Ticket is Locked for Week {parlay.week}</span>
+                  </div>
+                  <p className="text-[11px] text-sleeper-muted">
+                    {parlay.finalized_by?.is_break_glass
+                      ? `Emergency override executed by ${parlay.finalized_by.owner_name}.`
+                      : `Finalized by ${parlay.bettor.owner_name}.`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleResetTestParlay}
+                    className="mt-2 text-[11px] text-sleeper-accent hover:underline inline-flex items-center space-x-1"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Reset demo state to open</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </aside>
         </div>
       </main>

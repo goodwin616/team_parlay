@@ -86,31 +86,36 @@ export const ParlayCard: React.FC<Props> = ({
             </span>
           </div>
 
-          <div className="text-right">
-            <span className="text-[10px] uppercase font-bold text-gray-400 block leading-tight">
-              Combined Odds
-            </span>
-            <span className="text-base font-black font-mono text-white">
-              {parlay.actual_odds_american || parlay.estimated_odds_american}
-            </span>
+          <div className="text-xs text-sleeper-muted font-mono font-medium">
+            {parlay.legs.filter(l => l.status === 'submitted').length} / {parlay.legs.length} legs ready
           </div>
         </div>
 
-        {/* Multiplier & Estimated Payout */}
-        <div className="mt-3 flex items-center justify-between p-2.5 rounded-xl bg-sleeper-dark/80 border border-sleeper-border">
-          <div>
-            <span className="text-[10px] text-gray-400 uppercase font-bold block leading-none">
-              Parlay Multiplier
+        {/* Unified 3-Metric Stats Bar */}
+        <div className="mt-3.5 grid grid-cols-3 gap-2 p-3 rounded-xl bg-sleeper-dark/90 border border-sleeper-border text-center">
+          <div className="border-r border-sleeper-border/70 pr-2">
+            <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
+              Combined Odds
             </span>
-            <span className="text-sm font-extrabold font-mono text-white">
+            <span className="text-sm sm:text-base font-black font-mono text-white">
+              {parlay.actual_odds_american || parlay.estimated_odds_american}
+            </span>
+          </div>
+
+          <div className="border-r border-sleeper-border/70 px-2">
+            <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
+              Multiplier
+            </span>
+            <span className="text-sm sm:text-base font-extrabold font-mono text-white">
               {parlay.estimated_multiplier.toFixed(2)}x
             </span>
           </div>
-          <div className="text-right">
-            <span className="text-[10px] text-gray-400 uppercase font-bold block leading-none">
+
+          <div className="pl-2">
+            <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
               {parlay.actual_payout ? 'Actual Payout' : 'Est. Payout'}
             </span>
-            <span className="text-lg font-black font-mono text-sleeper-accent">
+            <span className="text-sm sm:text-base font-black font-mono text-sleeper-accent">
               ${parlay.actual_payout?.toFixed(2) || parlay.estimated_payout.toFixed(2)}
             </span>
           </div>
@@ -161,19 +166,19 @@ export const ParlayCard: React.FC<Props> = ({
               key={leg.id || `leg-${index}`}
               className={`p-3.5 flex items-center justify-between transition ${
                 isCurrentUserLeg ? 'bg-sleeper-accent/5' : 'hover:bg-white/[0.02]'
-              }`}
+              } ${!isSubmitted ? 'opacity-70 hover:opacity-90 bg-white/[0.01]' : ''}`}
             >
               <div className="flex items-start space-x-3 min-w-0 pr-2">
                 <div className="mt-0.5 shrink-0">
                   {isSubmitted ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   ) : (
-                    <CircleDashed className="w-4 h-4 text-gray-500 animate-pulse" />
+                    <CircleDashed className="w-4 h-4 text-amber-400/80 animate-pulse" />
                   )}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                    <span className="text-xs font-bold text-white truncate">
+                    <span className={`text-xs font-bold truncate ${isSubmitted ? 'text-white' : 'text-gray-300'}`}>
                       {leg.owner_name}
                     </span>
                     <span className="text-[10px] text-sleeper-muted truncate">
@@ -199,7 +204,9 @@ export const ParlayCard: React.FC<Props> = ({
                     )}
                   </div>
 
-                  <p className="text-xs font-medium text-gray-200 mt-1 leading-snug break-words">
+                  <p className={`text-xs mt-1 leading-snug break-words ${
+                    isSubmitted ? 'font-medium text-gray-200' : 'italic text-gray-400 font-normal'
+                  }`}>
                     {leg.description}
                   </p>
                 </div>
@@ -207,9 +214,18 @@ export const ParlayCard: React.FC<Props> = ({
 
               {/* Odds & Edit Action */}
               <div className="flex items-center space-x-2 shrink-0">
-                <span className="font-mono text-xs font-bold px-2 py-1 rounded bg-sleeper-dark border border-sleeper-border text-sleeper-accent">
-                  {leg.odds_american}
-                </span>
+                {isSubmitted ? (
+                  <span className="font-mono text-xs font-bold px-2 py-1 rounded bg-sleeper-dark border border-sleeper-border text-sleeper-accent">
+                    {leg.odds_american}
+                  </span>
+                ) : (
+                  <span 
+                    title="Waiting for pick submission (will snap from fallback default pool if deadline passes)"
+                    className="font-mono text-[11px] font-medium px-2 py-0.5 rounded bg-sleeper-dark/40 border border-dashed border-gray-700 text-gray-400"
+                  >
+                    TBD
+                  </span>
+                )}
 
                 {parlay.status === 'open' && isCurrentUserLeg && (
                   <button

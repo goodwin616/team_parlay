@@ -1,6 +1,6 @@
-import React from 'react';
-import { DollarSign, AlertCircle } from 'lucide-react';
-import { WeeklyParlay } from '../types';
+import React from "react";
+import { DollarSign, AlertCircle } from "lucide-react";
+import { WeeklyParlay } from "../types";
 
 interface Props {
   parlay: WeeklyParlay;
@@ -10,7 +10,7 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
   const { bettor } = parlay;
 
   return (
-    <section 
+    <section
       aria-label="Weekly Bettor Spotlight"
       className="relative overflow-hidden rounded-xl bg-gradient-to-r from-sleeper-card via-sleeper-card to-[#233144] border border-sleeper-border shadow-lg p-4 mb-4"
     >
@@ -32,8 +32,10 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
               </span>
             </div>
             <h2 className="text-base sm:text-lg font-extrabold text-white mt-0.5">
-              {bettor.team_name}{' '}
-              <span className="text-sleeper-muted font-normal">({bettor.owner_name})</span>
+              {bettor.team_name}{" "}
+              <span className="text-sleeper-muted font-normal">
+                ({bettor.owner_name})
+              </span>
             </h2>
             <div className="flex items-center space-x-2 mt-1 text-xs text-gray-300 flex-wrap">
               <span className="font-mono text-red-300 font-bold bg-red-950/50 px-1.5 py-0.5 rounded border border-red-800/40">
@@ -41,7 +43,9 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
               </span>
               <span className="text-gray-400">prior week</span>
               <span className="text-gray-600">•</span>
-              <span className="text-gray-300">On the hook for this week's parlay ticket</span>
+              <span className="text-gray-300">
+                On the hook for this week's parlay ticket
+              </span>
             </div>
           </div>
         </div>
@@ -51,7 +55,9 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
             <DollarSign className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Stake Due: $5.00</span>
           </div>
-          <span className="text-[10px] text-sleeper-muted mt-1">1 leg per member</span>
+          <span className="text-[10px] text-sleeper-muted mt-1">
+            1 leg per member
+          </span>
         </div>
       </div>
     </section>
