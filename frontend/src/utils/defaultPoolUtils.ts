@@ -9,5 +9,5 @@ export function isTeamMissingDefaults(team?: TeamProfile | null): boolean {
 }
 
 export function isLegOnBye(leg: DefaultLeg, byeTeams: string[] = []): boolean {
-  return byeTeams.includes(leg.nfl_team.toUpperCase());
+  return byeTeams.map(t => t.toUpperCase()).includes(leg.nfl_team.toUpperCase());
 }

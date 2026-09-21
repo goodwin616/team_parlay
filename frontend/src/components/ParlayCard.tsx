@@ -1,20 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, AlertTriangle, Dice5, CheckCircle2, CircleDashed, Edit3, ExternalLink } from 'lucide-react';
-import { WeeklyParlay, ParlayLeg } from '../types';
+import { WeeklyParlay, ParlayLeg, TeamProfile } from '../types';
+import { getTeamDefaults } from '../utils/defaultPoolUtils';
 
 interface Props {
   parlay: WeeklyParlay;
   currentRosterId: number | null;
-  onOpenPickModal: (leg?: ParlayLeg) => void;
+  teams?: TeamProfile[];
+  onOpenPickModal: (leg: ParlayLeg) => void;
+  onOpenDefaultPoolModal?: () => void;
   onOpenDefaultPool?: () => void;
+  onViewTeamDefaults?: (team: TeamProfile) => void;
 }
 
 export const ParlayCard: React.FC<Props> = ({
   parlay,
   currentRosterId,
+  teams,
   onOpenPickModal,
+  onOpenDefaultPoolModal,
   onOpenDefaultPool,
+  onViewTeamDefaults,
 }) => {
+  const handleOpenDefaultPool = onOpenDefaultPoolModal || onOpenDefaultPool;
   const [timeLeft, setTimeLeft] = useState<string>('');
 
   // Live countdown to earliest kickoff
@@ -161,6 +169,8 @@ export const ParlayCard: React.FC<Props> = ({
           const isCurrentUserLeg = currentRosterId !== null && leg.roster_id === currentRosterId;
           const isSubmitted = leg.status === 'submitted';
           const canEdit = parlay.status === 'open' && isCurrentUserLeg;
+          const team = teams?.find(t => t.roster_id === leg.roster_id);
+          const defaultsCount = team ? getTeamDefaults(team).length : 0;
 
           return (
             <div
@@ -197,6 +207,45 @@ export const ParlayCard: React.FC<Props> = ({
                     <span className="text-[10px] text-sleeper-muted truncate">
                       ({leg.team_name})
                     </span>
+
+                    {/* Interactive Default Picks Status Badge */}
+                    {team && (
+                      defaultsCount > 0 ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onViewTeamDefaults?.(team);
+                          }}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                          }}
+                          title={`View ${team.team_name || leg.team_name}'s fallback default picks (${defaultsCount} configured)`}
+                          aria-label={`View ${team.team_name || leg.team_name}'s fallback default picks (${defaultsCount} configured)`}
+                          className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 active:bg-purple-800 border border-purple-500/40 text-purple-300 hover:text-purple-100 transition shadow-sm cursor-pointer"
+                        >
+                          <Dice5 className="w-3 h-3 text-purple-400 shrink-0" />
+                          <span className="hidden sm:inline">{defaultsCount} Defaults</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onViewTeamDefaults?.(team);
+                          }}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                          }}
+                          title={`${team.team_name || leg.team_name} has no fallback default picks configured`}
+                          aria-label={`${team.team_name || leg.team_name} has no fallback default picks configured`}
+                          className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-950/60 hover:bg-amber-900/80 active:bg-amber-800 border border-amber-500/40 text-amber-300 hover:text-amber-100 transition shadow-sm cursor-pointer"
+                        >
+                          <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+                          <span className="hidden sm:inline">No Defaults</span>
+                        </button>
+                      )
+                    )}
 
                     {/* Auto-Rolled Default Badge */}
                     {leg.is_default_roll && (
@@ -268,11 +317,11 @@ export const ParlayCard: React.FC<Props> = ({
       )}
 
       {/* Fallback Pool Manager Trigger - Full-width 44px button */}
-      {onOpenDefaultPool && (
+      {handleOpenDefaultPool && (
         <div className="p-3 sm:p-3.5 bg-sleeper-dark/90 border-t border-sleeper-border">
           <button
             type="button"
-            onClick={onOpenDefaultPool}
+            onClick={handleOpenDefaultPool}
             className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-purple-950/40 hover:bg-purple-900/50 active:bg-purple-900/70 border border-purple-500/40 text-purple-200 hover:text-white font-bold text-xs transition flex items-center justify-center space-x-2 shadow-sm active:scale-[0.99]"
           >
             <Dice5 className="w-4 h-4 text-purple-300 shrink-0" />
