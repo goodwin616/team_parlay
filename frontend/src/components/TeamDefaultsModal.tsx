@@ -186,7 +186,7 @@ export const TeamDefaultsModal: React.FC<TeamDefaultsModalProps> = ({
 
         {/* Modal Footer */}
         <div className="p-4 border-t border-sleeper-border bg-sleeper-card flex items-center justify-end space-x-3">
-          {isCurrentUser && onEditPool && (
+          {isCurrentUser && onEditPool && !isMissing && (
             <button
               type="button"
               onClick={() => {
@@ -195,17 +195,8 @@ export const TeamDefaultsModal: React.FC<TeamDefaultsModalProps> = ({
               }}
               className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold bg-sleeper-accent hover:bg-sleeper-accent/90 text-black transition flex items-center space-x-1.5"
             >
-              {isMissing ? (
-                <>
-                  <PlusCircle className="w-4 h-4" />
-                  <span>Set Up My Pool</span>
-                </>
-              ) : (
-                <>
-                  <Edit3 className="w-4 h-4" />
-                  <span>Edit My Pool</span>
-                </>
-              )}
+              <Edit3 className="w-4 h-4" />
+              <span>Edit My Pool</span>
             </button>
           )}
           <button

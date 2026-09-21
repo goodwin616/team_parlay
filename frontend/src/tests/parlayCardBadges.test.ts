@@ -39,4 +39,27 @@ describe('ParlayCard Badge Logic', () => {
     expect(getTeamDefaults(unknownTeam)).toEqual([]);
     expect(isTeamMissingDefaults(unknownTeam)).toBe(true);
   });
+
+  it('determines sidebar fallback pool button state and warning status', () => {
+    const teamWithDefaults = teams[0];
+    const teamWithoutDefaults = teams[1];
+
+    const getSidebarFallbackState = (team: TeamProfile) => {
+      const isMissing = !team.default_legs || team.default_legs.length === 0;
+      return {
+        isAtRisk: isMissing,
+        buttonText: isMissing
+          ? 'Set Up Fallback Pool (0/5 rules - At Risk)'
+          : `Configure Fallback Pool (${team.default_legs.length}/5 rules)`,
+      };
+    };
+
+    const state1 = getSidebarFallbackState(teamWithDefaults);
+    expect(state1.isAtRisk).toBe(false);
+    expect(state1.buttonText).toBe('Configure Fallback Pool (1/5 rules)');
+
+    const state2 = getSidebarFallbackState(teamWithoutDefaults);
+    expect(state2.isAtRisk).toBe(true);
+    expect(state2.buttonText).toBe('Set Up Fallback Pool (0/5 rules - At Risk)');
+  });
 });

@@ -10,12 +10,14 @@ import {
   RefreshCw,
   CircleDashed,
   Dice5,
-  CheckCircle2
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 import { BettorBanner } from './components/BettorBanner';
 import { ParlayCard } from './components/ParlayCard';
 import { PickModal } from './components/PickModal';
 import { DefaultPoolModal } from './components/DefaultPoolModal';
+import { TeamDefaultsModal } from './components/TeamDefaultsModal';
 import { BreakGlassModal } from './components/BreakGlassModal';
 import { SleeperChatExport } from './components/SleeperChatExport';
 import { PastSlipsArchive } from './components/PastSlipsArchive';
@@ -96,11 +98,7 @@ const MOCK_TEAMS: TeamProfile[] = [
     owner_id: 'u5',
     owner_name: 'Dave',
     team_name: 'Lone Star Dynasty',
-    default_legs: [
-      { id: 'd5_1', nfl_team: 'DAL', market_type: 'moneyline', description_template: 'Cowboys Moneyline' },
-      { id: 'd5_2', nfl_team: 'DAL', market_type: 'player_prop', player_name: 'CeeDee Lamb', description_template: 'CeeDee Lamb Anytime TD' },
-      { id: 'd5_3', nfl_team: 'PHI', market_type: 'game_total', description_template: 'Eagles Game Total Over' },
-    ],
+    default_legs: [],
   },
 ];
 
@@ -260,6 +258,7 @@ export const App: React.FC = () => {
   const [editingLeg, setEditingLeg] = useState<ParlayLeg | undefined>(undefined);
   const [isBreakGlassOpen, setIsBreakGlassOpen] = useState(false);
   const [isDefaultPoolOpen, setIsDefaultPoolOpen] = useState(false);
+  const [viewingDefaultsTeam, setViewingDefaultsTeam] = useState<TeamProfile | null>(null);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authPinInput, setAuthPinInput] = useState('');
@@ -397,6 +396,9 @@ export const App: React.FC = () => {
         t.roster_id === currentRosterId ? { ...t, default_legs: newDefaults } : t
       )
     );
+    if (viewingDefaultsTeam && viewingDefaultsTeam.roster_id === currentRosterId) {
+      setViewingDefaultsTeam(prev => prev ? { ...prev, default_legs: newDefaults } : null);
+    }
   };
 
   // Switch Team / PIN Login simulation
@@ -484,11 +486,13 @@ export const App: React.FC = () => {
             <ParlayCard
               parlay={parlay}
               currentRosterId={currentRosterId}
+              teams={teams}
               onOpenPickModal={(leg) => {
                 setEditingLeg(leg);
                 setIsPickOpen(true);
               }}
               onOpenDefaultPool={() => setIsDefaultPoolOpen(true)}
+              onViewTeamDefaults={(t) => setViewingDefaultsTeam(t)}
             />
           </section>
 
@@ -548,14 +552,25 @@ export const App: React.FC = () => {
               )}
 
               {/* Manage Fallback Pool shortcut */}
-              <button
-                type="button"
-                onClick={() => setIsDefaultPoolOpen(true)}
-                className="w-full py-2 px-3 rounded-lg bg-sleeper-dark border border-sleeper-border text-xs font-semibold text-gray-300 hover:text-white hover:border-gray-500 transition flex items-center justify-center space-x-1.5"
-              >
-                <Dice5 className="w-3.5 h-3.5 text-purple-400" />
-                <span>Configure Fallback Pool ({currentTeam.default_legs?.length || 0}/5 rules)</span>
-              </button>
+              {(!currentTeam.default_legs || currentTeam.default_legs.length === 0) ? (
+                <button
+                  type="button"
+                  onClick={() => setIsDefaultPoolOpen(true)}
+                  className="w-full py-2 px-3 rounded-lg border border-amber-500/40 bg-amber-950/20 text-amber-300 hover:bg-amber-950/30 hover:border-amber-500/60 text-xs font-semibold transition flex items-center justify-center space-x-1.5"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Set Up Fallback Pool (0/5 rules - At Risk)</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsDefaultPoolOpen(true)}
+                  className="w-full py-2 px-3 rounded-lg bg-sleeper-dark border border-sleeper-border text-xs font-semibold text-gray-300 hover:text-white hover:border-gray-500 transition flex items-center justify-center space-x-1.5"
+                >
+                  <Dice5 className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span>Configure Fallback Pool ({currentTeam.default_legs.length}/5 rules)</span>
+                </button>
+              )}
             </div>
 
             {/* 2. Sleeper Chat Exporter Card (Routine Social Export) */}
@@ -658,6 +673,18 @@ export const App: React.FC = () => {
         onSaveDefaults={handleSaveDefaults}
         activePlayers={MOCK_ACTIVE_PLAYERS}
         teamName={currentTeam.team_name}
+        byeTeams={['CAR', 'CLE']}
+      />
+
+      <TeamDefaultsModal
+        isOpen={Boolean(viewingDefaultsTeam)}
+        onClose={() => setViewingDefaultsTeam(null)}
+        team={viewingDefaultsTeam}
+        isCurrentUser={viewingDefaultsTeam?.roster_id === currentRosterId}
+        onEditPool={() => {
+          setViewingDefaultsTeam(null);
+          setIsDefaultPoolOpen(true);
+        }}
         byeTeams={['CAR', 'CLE']}
       />
 
