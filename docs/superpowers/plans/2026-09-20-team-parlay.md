@@ -4,17 +4,18 @@
 
 **Goal:** Build a lightweight, mobile-first web app for an NFL fantasy football league on Sleeper to manage their weekly \$5 team parlay.
 
-**Architecture:** A serverless stack featuring Python Firebase Cloud Functions (v2) for business logic, Sleeper API sync, and mainline odds caching; Cloud Firestore for persistence; and a responsive React (Vite) + Tailwind CSS client hosted on Firebase Hosting.
+**Architecture:** A serverless stack featuring Python Firebase Cloud Functions (v2) for business logic, Sleeper API sync (including active player autocomplete cache), and mainline odds caching; Cloud Firestore for persistence; and a responsive React (Vite) + Tailwind CSS client hosted on Firebase Hosting.
 
 **Tech Stack:** Python 3.11, `firebase_functions`, `google-cloud-firestore`, React 18, Vite, Tailwind CSS, Lucide React, Pytest.
 
 ## Global Constraints
 
-- **Security:** 4-digit PINs are verified on the backend; the backend issues a cryptographically secure random `uuid4()` session token stored in `localStorage`. Hashes/PINs are never stored on the client.
-- **API Quota:** Automated CRON queries strictly mainline markets (moneyline, spread, totals) at 1 credit per call (~40 requests/month out of 500 limit). Player props use custom entry with user-supplied sportsbook odds.
+- **No Win/Loss Tracking:** Past slips archive is strictly read-only historical record of past weeks' tickets and bettors. No grading engine or win/loss records.
+- **Player Props Autocomplete:** Pulls and caches Sleeper's active NFL players database (`/v1/players/nfl`) to autocomplete player names and automatically tag their NFL teams.
+- **Security:** 4-digit PINs are verified on the backend; the backend issues a cryptographically secure random `uuid4()` session token stored in `localStorage`.
+- **API Quota:** Automated CRON queries strictly mainline markets (moneyline, spread, totals) at 1 credit per call (~40 requests/month out of 500 limit).
 - **Earliest Kickoff Rule:** The finalization deadline is strictly the kickoff of the earliest leg on the ticket. If TNF is included, the ticket finalizes before Thursday kickoff.
 - **Deterministic Tie-Breaker:** Hierarchy: 1) Weekly Pts $\to$ 2) Season PF $\to$ 3) Season Max PF $\to$ 4) Alphabetical.
-- **Manual Ticket Grading:** Legs are graded via an administrative UI toggle (`won`, `lost`, `voided`, `push`), eliminating external scoring API dependencies.
 
 ---
 
@@ -35,8 +36,7 @@ team_parlay/
 │       ├── test_parlay_math.py
 │       ├── test_sleeper_sync.py
 │       ├── test_odds_engine.py
-│       ├── test_auth_utils.py
-│       └── test_grading.py
+│       └── test_auth_utils.py
 └── frontend/
     ├── package.json
     ├── vite.config.ts
@@ -53,9 +53,9 @@ team_parlay/
             ├── BettorBanner.tsx
             ├── ParlayCard.tsx
             ├── PickModal.tsx
+            ├── PlayerSearchInput.tsx
             ├── DefaultPoolModal.tsx
             ├── BreakGlassModal.tsx
-            ├── GradeTicketModal.tsx
             ├── SleeperChatExport.tsx
             └── PastSlipsArchive.tsx
 ```
@@ -124,19 +124,7 @@ pytest>=8.0.0
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /leagues/{leagueId} {
-      allow read: if true;
-      allow write: if false;
-    }
-    match /teams/{rosterId} {
-      allow read: if true;
-      allow write: if false;
-    }
-    match /parlays/{week} {
-      allow read: if true;
-      allow write: if false;
-    }
-    match /odds_cache/{docId} {
+    match /{document=**} {
       allow read: if true;
       allow write: if false;
     }
@@ -195,25 +183,14 @@ def test_decimal_to_american():
 
 def test_calculate_parlay_standard():
     legs = [
-        {"odds_american": "-110", "result_status": "pending"},
-        {"odds_american": "+150", "result_status": "pending"},
-        {"odds_american": "-200", "result_status": "pending"},
+        {"odds_american": "-110"},
+        {"odds_american": "+150"},
+        {"odds_american": "-200"},
     ]
     result = calculate_parlay(legs, stake=5.0)
     assert result["multiplier"] == pytest.approx(7.159, 0.01)
     assert result["estimated_payout"] == pytest.approx(35.80, 0.05)
     assert result["odds_american"] == "+616"
-
-def test_calculate_parlay_with_void_and_push():
-    legs = [
-        {"odds_american": "+100", "result_status": "won"},
-        {"odds_american": "-110", "result_status": "voided"},
-        {"odds_american": "+150", "result_status": "push"},
-    ]
-    result = calculate_parlay(legs, stake=5.0)
-    assert result["multiplier"] == 2.0
-    assert result["estimated_payout"] == 10.0
-    assert result["odds_american"] == "+100"
 
 def test_check_sgp_correlation():
     independent_legs = [
@@ -266,9 +243,6 @@ def calculate_parlay(legs: List[Dict[str, Any]], stake: float = 5.0) -> Dict[str
     active_decimals = []
     
     for leg in legs:
-        status = leg.get("result_status", "pending")
-        if status in ("voided", "push"):
-            continue
         odds_raw = leg.get("odds_american", "-110")
         active_decimals.append(american_to_decimal(odds_raw))
         
@@ -307,7 +281,7 @@ git commit -m "feat: implement parlay odds calculations and SGP correlation"
 
 ---
 
-### Task 3: Sleeper Sync & Deterministic Tie-Breakers
+### Task 3: Sleeper Sync, Tie-Breakers & Active Player Cache
 
 **Files:**
 - Create: `functions/sleeper_sync.py`
@@ -316,16 +290,16 @@ git commit -m "feat: implement parlay odds calculations and SGP correlation"
 **Interfaces:**
 - Produces:
   - `determine_weekly_bettor(matchups: list[dict], rosters: list[dict], users: list[dict]) -> dict`
-  - `fetch_sleeper_league_data(league_id: str, week: int) -> dict`
+  - `fetch_active_nfl_players(players_raw: dict) -> list[dict]`
 
-- [ ] **Step 1: Write failing tests for 4-tier tie-breaker**
+- [ ] **Step 1: Write failing tests for tie-breaker and active players filter**
 
 Create `functions/tests/test_sleeper_sync.py`:
 ```python
 import pytest
-from sleeper_sync import determine_weekly_bettor
+from sleeper_sync import determine_weekly_bettor, fetch_active_nfl_players
 
-def test_determine_weekly_bettor_clear_loser():
+def test_determine_weekly_bettor():
     matchups = [
         {"roster_id": 1, "points": 115.4},
         {"roster_id": 2, "points": 88.2},
@@ -342,21 +316,17 @@ def test_determine_weekly_bettor_clear_loser():
     assert bettor["roster_id"] == 2
     assert bettor["owner_name"] == "Bob"
 
-def test_determine_weekly_bettor_tiebreaker():
-    matchups = [
-        {"roster_id": 1, "points": 80.0},
-        {"roster_id": 2, "points": 80.0},
-    ]
-    rosters = [
-        {"roster_id": 1, "owner_id": "u1", "settings": {"fpts": 400, "ppts": 500}},
-        {"roster_id": 2, "owner_id": "u2", "settings": {"fpts": 450, "ppts": 550}},
-    ]
-    users = [
-        {"user_id": "u1", "display_name": "Alice", "metadata": {"team_name": "Team A"}},
-        {"user_id": "u2", "display_name": "Bob", "metadata": {"team_name": "Team B"}},
-    ]
-    bettor = determine_weekly_bettor(matchups, rosters, users)
-    assert bettor["roster_id"] == 1
+def test_fetch_active_nfl_players():
+    raw_data = {
+        "p1": {"first_name": "Saquon", "last_name": "Barkley", "team": "PHI", "position": "RB", "status": "Active"},
+        "p2": {"first_name": "Patrick", "last_name": "Mahomes", "team": "KC", "position": "QB", "status": "Active"},
+        "p3": {"first_name": "Retired", "last_name": "Player", "team": None, "position": "WR", "status": "Inactive"},
+        "p4": {"first_name": "Offensive", "last_name": "Lineman", "team": "DET", "position": "OT", "status": "Active"}
+    }
+    active = fetch_active_nfl_players(raw_data)
+    assert len(active) == 2
+    assert active[0]["name"] == "Saquon Barkley"
+    assert active[0]["team"] == "PHI"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -377,6 +347,30 @@ def fetch_sleeper_league_data(league_id: str, week: int) -> Dict[str, Any]:
     users = requests.get(f"{SLEEPER_BASE_URL}/league/{league_id}/users").json()
     matchups = requests.get(f"{SLEEPER_BASE_URL}/league/{league_id}/matchups/{week}").json()
     return {"rosters": rosters, "users": users, "matchups": matchups}
+
+def fetch_active_nfl_players(players_raw: Dict[str, Any]) -> List[Dict[str, Any]]:
+    # Filter to active offensive skill positions with an NFL team
+    valid_positions = {"QB", "RB", "WR", "TE", "K", "DEF"}
+    active_players = []
+
+    for pid, p in players_raw.items():
+        team = p.get("team")
+        pos = p.get("position")
+        status = p.get("status")
+
+        if team and pos in valid_positions and status == "Active":
+            name = f"{p.get('first_name', '')} {p.get('last_name', '')}".strip()
+            if not name:
+                name = p.get("search_full_name", pid)
+            active_players.append({
+                "id": pid,
+                "name": name,
+                "team": team.upper(),
+                "position": pos
+            })
+
+    active_players.sort(key=lambda x: x["name"])
+    return active_players
 
 def determine_weekly_bettor(
     matchups: List[Dict[str, Any]],
@@ -433,7 +427,7 @@ Expected: PASS
 
 ```bash
 git add functions/sleeper_sync.py functions/tests/test_sleeper_sync.py
-git commit -m "feat: implement sleeper sync and deterministic tie-breaker hierarchy"
+git commit -m "feat: implement sleeper sync, deterministic bettor selection, and active player cache"
 ```
 
 ---
@@ -451,7 +445,7 @@ git commit -m "feat: implement sleeper sync and deterministic tie-breaker hierar
   - `verify_session_token(token: str, valid_tokens: list[str]) -> bool`
   - `create_break_glass_log(executor_roster_id: int, executor_name: str, bettor_roster_id: int) -> dict`
 
-- [ ] **Step 1: Write failing tests for session token authentication**
+- [ ] **Step 1: Write failing tests for auth utilities**
 
 Create `functions/tests/test_auth_utils.py`:
 ```python
@@ -542,40 +536,34 @@ git commit -m "feat: implement backend session token issuance and validation"
 
 ---
 
-### Task 5: Odds Engine, Earliest Kickoff & Quota Protection
+### Task 5: Odds Engine & Earliest Kickoff Finalization
 
 **Files:**
 - Create: `functions/odds_engine.py`
 - Create: `functions/tests/test_odds_engine.py`
+- Create: `functions/main.py`
 
 **Interfaces:**
 - Produces:
   - `calculate_earliest_kickoff(legs: list[dict]) -> Optional[str]`
-  - `is_kickoff_passed(kickoff_time_iso: str) -> bool`
   - `roll_default_leg(team_defaults: list[dict], bye_teams: list[str], active_odds_cache: dict) -> dict`
+  - `handle_finalize_parlay(...) -> dict`
 
 - [ ] **Step 1: Write failing tests for earliest kickoff and default roll**
 
 Create `functions/tests/test_odds_engine.py`:
 ```python
 import pytest
-from odds_engine import calculate_earliest_kickoff, is_kickoff_passed, roll_default_leg
+from odds_engine import calculate_earliest_kickoff, roll_default_leg
 
 def test_calculate_earliest_kickoff():
     legs = [
-        {"kickoff_time": "2026-09-27T17:00:00Z"}, # Sunday 1 PM
-        {"kickoff_time": "2026-09-24T20:15:00Z"}, # Thursday Night
-        {"kickoff_time": "2026-09-28T00:20:00Z"}, # Sunday Night
+        {"kickoff_time": "2026-09-27T17:00:00Z"},
+        {"kickoff_time": "2026-09-24T20:15:00Z"},
     ]
-    earliest = calculate_earliest_kickoff(legs)
-    assert earliest == "2026-09-24T20:15:00Z"
+    assert calculate_earliest_kickoff(legs) == "2026-09-24T20:15:00Z"
 
-def test_is_kickoff_passed():
-    past = "2026-09-24T20:15:00Z"
-    now_after = "2026-09-24T20:20:00Z"
-    assert is_kickoff_passed(past, now_after) is True
-
-def test_roll_default_leg_mainlines_only():
+def test_roll_default_leg_mainlines():
     defaults = [
         {"id": "1", "nfl_team": "KC", "market_type": "spread", "description_template": "Chiefs Spread"}
     ]
@@ -601,8 +589,9 @@ def test_roll_default_leg_mainlines_only():
 Run: `PYTHONPATH=functions ./venv/bin/pytest functions/tests/test_odds_engine.py -v`  
 Expected: FAIL
 
-- [ ] **Step 3: Implement `functions/odds_engine.py`**
+- [ ] **Step 3: Implement `functions/odds_engine.py` and `functions/main.py`**
 
+Create `functions/odds_engine.py`:
 ```python
 from datetime import datetime
 import random
@@ -657,7 +646,7 @@ def roll_default_leg(
             "odds_decimal": 1.91,
             "is_default_roll": True,
             "game_id": f"game_{team.lower()}",
-            "result_status": "pending",
+            "status": "submitted",
             "kickoff_time": None
         }
 
@@ -688,131 +677,18 @@ def roll_default_leg(
         "odds_decimal": american_to_decimal(odds),
         "is_default_roll": True,
         "game_id": game_id,
-        "result_status": "pending",
+        "status": "submitted",
         "kickoff_time": commence_time
     }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `PYTHONPATH=functions ./venv/bin/pytest functions/tests/test_odds_engine.py -v`  
-Expected: PASS
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add functions/odds_engine.py functions/tests/test_odds_engine.py
-git commit -m "feat: implement earliest kickoff calculation and mainline default rolling"
-```
-
----
-
-### Task 6: Ticket Grading Engine & Endpoint Handlers
-
-**Files:**
-- Create: `functions/tests/test_grading.py`
-- Create: `functions/main.py`
-
-**Interfaces:**
-- Produces:
-  - `handle_grade_ticket(parlay: dict, grades: dict) -> dict`
-  - `handle_finalize_parlay(existing_legs: list, all_teams: list, ...) -> dict`
-
-- [ ] **Step 1: Write failing tests for manual ticket grading**
-
-Create `functions/tests/test_grading.py`:
-```python
-import pytest
-from main import handle_grade_ticket
-
-def test_grade_ticket_all_won():
-    parlay = {
-        "status": "locked",
-        "resolution": "pending",
-        "legs": [
-            {"id": "l1", "roster_id": 1, "odds_american": "-110", "result_status": "pending"},
-            {"id": "l2", "roster_id": 2, "odds_american": "+150", "result_status": "pending"},
-        ]
-    }
-    grades = {"l1": "won", "l2": "won"}
-    result = handle_grade_ticket(parlay, grades)
-    assert result["resolution"] == "won"
-    assert result["legs"][0]["result_status"] == "won"
-
-def test_grade_ticket_with_one_loss():
-    parlay = {
-        "status": "locked",
-        "resolution": "pending",
-        "legs": [
-            {"id": "l1", "roster_id": 1, "odds_american": "-110", "result_status": "pending"},
-            {"id": "l2", "roster_id": 2, "odds_american": "+150", "result_status": "pending"},
-        ]
-    }
-    grades = {"l1": "won", "l2": "lost"}
-    result = handle_grade_ticket(parlay, grades)
-    assert result["resolution"] == "lost"
-
-def test_grade_ticket_with_push():
-    parlay = {
-        "status": "locked",
-        "resolution": "pending",
-        "legs": [
-            {"id": "l1", "roster_id": 1, "odds_american": "+100", "result_status": "pending"}, # 2.0
-            {"id": "l2", "roster_id": 2, "odds_american": "-110", "result_status": "pending"}, # pushed
-        ]
-    }
-    grades = {"l1": "won", "l2": "push"}
-    result = handle_grade_ticket(parlay, grades)
-    assert result["resolution"] == "won"
-    assert result["estimated_payout"] == 10.0 # only leg 1 counts
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `PYTHONPATH=functions ./venv/bin/pytest functions/tests/test_grading.py -v`  
-Expected: FAIL
-
-- [ ] **Step 3: Implement `functions/main.py`**
-
+Create `functions/main.py`:
 ```python
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from parlay_math import calculate_parlay
-from odds_engine import roll_default_leg, calculate_earliest_kickoff, is_kickoff_passed
+from odds_engine import roll_default_leg, calculate_earliest_kickoff
 from auth_utils import create_break_glass_log
-
-def handle_grade_ticket(parlay: Dict[str, Any], grades: Dict[str, str]) -> Dict[str, Any]:
-    legs = parlay.get("legs", [])
-    has_loss = False
-    all_decided = True
-
-    for leg in legs:
-        lid = leg.get("id")
-        if lid in grades:
-            leg["result_status"] = grades[lid]
-        status = leg.get("result_status", "pending")
-        if status == "lost":
-            has_loss = True
-        elif status == "pending":
-            all_decided = False
-
-    stats = calculate_parlay(legs, stake=5.0)
-
-    if has_loss:
-        resolution = "lost"
-    elif all_decided:
-        resolution = "won"
-    else:
-        resolution = "pending"
-
-    return {
-        **parlay,
-        "legs": legs,
-        "resolution": resolution,
-        "estimated_payout": stats["estimated_payout"],
-        "estimated_multiplier": stats["multiplier"],
-        "graded_at": datetime.utcnow().isoformat() + "Z"
-    }
 
 def handle_finalize_parlay(
     existing_legs: List[Dict[str, Any]],
@@ -845,7 +721,6 @@ def handle_finalize_parlay(
 
     return {
         "status": "locked",
-        "resolution": "pending",
         "legs": final_legs,
         "earliest_kickoff": earliest,
         "estimated_odds_american": parlay_stats["odds_american"],
@@ -859,33 +734,98 @@ def handle_finalize_parlay(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `PYTHONPATH=functions ./venv/bin/pytest functions/tests/test_grading.py -v`  
-Expected: PASS
-
-- [ ] **Step 5: Run full Python backend test suite**
-
 Run: `PYTHONPATH=functions ./venv/bin/pytest functions/tests/ -v`  
-Expected: PASS (14 tests passing)
+Expected: PASS (All backend tests passing)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add functions/main.py functions/tests/test_grading.py
-git commit -m "feat: implement manual ticket grading and earliest kickoff parlay locking"
+git add functions/odds_engine.py functions/main.py functions/tests/test_odds_engine.py
+git commit -m "feat: implement earliest kickoff parlay finalization and default rolling"
 ```
 
 ---
 
-### Task 7: Frontend Setup & Session Authentication Service
+### Task 6: Frontend Models & Session Auth Service
 
 **Files:**
 - Create: `frontend/src/types.ts`
 - Create: `frontend/src/services/auth.ts`
 
 **Interfaces:**
-- Produces: Session token storage, login verification via backend callable, and models.
+- Produces: Session token storage, login verification via backend callable, and models with Sleeper player cache.
 
-- [ ] **Step 1: Create `frontend/src/services/auth.ts`**
+- [ ] **Step 1: Create `frontend/src/types.ts`**
+
+```typescript
+export interface ActivePlayer {
+  id: string;
+  name: string;
+  team: string;
+  position: string;
+}
+
+export interface DefaultLeg {
+  id: string;
+  nfl_team: string;
+  market_type: 'moneyline' | 'spread' | 'game_total';
+  direction?: 'favorite' | 'underdog' | 'over' | 'under';
+  description_template: string;
+}
+
+export interface TeamProfile {
+  roster_id: number;
+  owner_id: string;
+  owner_name: string;
+  team_name: string;
+  avatar_url?: string;
+  default_legs: DefaultLeg[];
+}
+
+export interface ParlayLeg {
+  id: string;
+  roster_id: number;
+  team_name: string;
+  owner_name: string;
+  game_id?: string;
+  nfl_team: string;
+  description: string;
+  odds_american: string;
+  odds_decimal: number;
+  is_default_roll: boolean;
+  status: 'pending' | 'submitted';
+  kickoff_time?: string;
+}
+
+export interface WeeklyParlay {
+  week: number;
+  season: string;
+  status: 'open' | 'locked';
+  contains_sgp: boolean;
+  bettor: {
+    roster_id: number;
+    team_name: string;
+    owner_name: string;
+    points_last_week: number;
+  };
+  earliest_kickoff: string | null;
+  legs: ParlayLeg[];
+  estimated_odds_american: string;
+  estimated_multiplier: number;
+  estimated_payout: number;
+  actual_payout: number | null;
+  actual_odds_american?: string | null;
+  sportsbook_url?: string;
+  finalized_at?: string | null;
+  finalized_by?: {
+    roster_id: number;
+    owner_name: string;
+    is_break_glass: boolean;
+  } | null;
+}
+```
+
+- [ ] **Step 2: Create `frontend/src/services/auth.ts`**
 
 ```typescript
 const SESSION_KEY = 'tp_session_token';
@@ -909,225 +849,353 @@ export function clearSession() {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add frontend/src/services/auth.ts
-git commit -m "feat: implement frontend session token storage service"
+git add frontend/src/types.ts frontend/src/services/auth.ts
+git commit -m "feat: define frontend data types and session authentication service"
 ```
 
 ---
 
-### Task 8: Interactive UI Modals (Manual Ticket Grading & Custom Props)
+### Task 7: Player Autocomplete Search & Pick Modal
 
 **Files:**
-- Create: `frontend/src/components/GradeTicketModal.tsx`
-- Modify: `frontend/src/components/PickModal.tsx`
+- Create: `frontend/src/components/PlayerSearchInput.tsx`
+- Create: `frontend/src/components/PickModal.tsx`
 
 **Interfaces:**
-- Produces: UI dialog for manual Won/Lost/Push grading and custom prop entry with user odds.
+- Produces: Typeahead search for Sleeper active players and pick modal integrating mainlines and player props.
 
-- [ ] **Step 1: Create `frontend/src/components/GradeTicketModal.tsx`**
+- [ ] **Step 1: Create `frontend/src/components/PlayerSearchInput.tsx`**
 
 ```tsx
 import React, { useState } from 'react';
-import { CheckCircle, XCircle, MinusCircle, X } from 'lucide-react';
-import { WeeklyParlay, ParlayLeg } from '../types';
+import { Search, User } from 'lucide-react';
+import { ActivePlayer } from '../types';
+
+interface Props {
+  players: ActivePlayer[];
+  onSelectPlayer: (player: ActivePlayer) => void;
+  selectedPlayer: ActivePlayer | null;
+}
+
+export const PlayerSearchInput: React.FC<Props> = ({ players, onSelectPlayer, selectedPlayer }) => {
+  const [query, setQuery] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+
+  const filtered = query.length >= 2
+    ? players.filter(p => p.name.toLowerCase().includes(query.toLowerCase())).slice(0, 6)
+    : [];
+
+  return (
+    <div className="relative">
+      <label className="block text-xs font-semibold text-gray-400 mb-1">Search NFL Player</label>
+      <div className="relative">
+        <input
+          type="text"
+          placeholder={selectedPlayer ? `${selectedPlayer.name} (${selectedPlayer.team} - ${selectedPlayer.position})` : "Type player name (e.g. Saquon, Henry)..."}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setIsOpen(true);
+          }}
+          className="w-full bg-sleeper-dark border border-sleeper-border rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:border-sleeper-accent focus:outline-none"
+        />
+        <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+      </div>
+
+      {isOpen && filtered.length > 0 && (
+        <ul className="absolute z-50 w-full mt-1 bg-sleeper-card border border-sleeper-border rounded-lg shadow-xl overflow-hidden divide-y divide-sleeper-border">
+          {filtered.map(p => (
+            <li
+              key={p.id}
+              onClick={() => {
+                onSelectPlayer(p);
+                setQuery('');
+                setIsOpen(false);
+              }}
+              className="p-2.5 hover:bg-white/10 cursor-pointer flex items-center justify-between text-xs"
+            >
+              <div className="flex items-center space-x-2">
+                <User className="w-3.5 h-3.5 text-gray-400" />
+                <span className="font-semibold text-white">{p.name}</span>
+              </div>
+              <span className="text-gray-400 font-mono">{p.team} • {p.position}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+```
+
+- [ ] **Step 2: Create `frontend/src/components/PickModal.tsx`**
+
+```tsx
+import React, { useState } from 'react';
+import { X } from 'lucide-react';
+import { ActivePlayer } from '../types';
+import { PlayerSearchInput } from './PlayerSearchInput';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  parlay: WeeklyParlay;
-  onSaveGrades: (grades: Record<string, string>) => void;
+  onSubmitPick: (pick: { description: string; nfl_team: string; odds_american: string; kickoff_time?: string }) => void;
+  rosterName: string;
+  activePlayers: ActivePlayer[];
 }
 
-export const GradeTicketModal: React.FC<Props> = ({ isOpen, onClose, parlay, onSaveGrades }) => {
-  const [grades, setGrades] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    parlay.legs.forEach(l => { init[l.id] = l.result_status || 'pending'; });
-    return init;
-  });
+export const PickModal: React.FC<Props> = ({ isOpen, onClose, onSubmitPick, rosterName, activePlayers }) => {
+  const [tab, setTab] = useState<'mainline' | 'prop' | 'custom'>('prop');
+  const [selectedPlayer, setSelectedPlayer] = useState<ActivePlayer | null>(null);
+  const [propText, setPropText] = useState('Anytime TD');
+  const [team, setTeam] = useState('KC');
+  const [market, setMarket] = useState('spread');
+  const [customText, setCustomText] = useState('');
+  const [odds, setOdds] = useState('-110');
 
   if (!isOpen) return null;
 
-  const setLegStatus = (id: string, status: string) => {
-    setGrades(prev => ({ ...prev, [id]: status }));
-  };
-
-  const handleSave = () => {
-    onSaveGrades(grades);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (tab === 'prop' && selectedPlayer) {
+      onSubmitPick({
+        description: `${selectedPlayer.name} - ${propText}`,
+        nfl_team: selectedPlayer.team,
+        odds_american: odds
+      });
+    } else if (tab === 'mainline') {
+      onSubmitPick({
+        description: `${team} ${market.toUpperCase()}`,
+        nfl_team: team,
+        odds_american: '-110'
+      });
+    } else {
+      onSubmitPick({
+        description: customText,
+        nfl_team: team,
+        odds_american: odds
+      });
+    }
     onClose();
   };
+
+  return (
+    <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
+      <div className="bg-sleeper-card border border-sleeper-border rounded-xl w-full max-w-md p-5 shadow-2xl">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold text-white">Pick Leg for {rosterName}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="flex border-b border-sleeper-border mb-4">
+          <button
+            onClick={() => setTab('prop')}
+            className={`pb-2 px-3 text-xs font-bold ${tab === 'prop' ? 'text-sleeper-accent border-b-2 border-sleeper-accent' : 'text-gray-400'}`}
+          >
+            Player Prop
+          </button>
+          <button
+            onClick={() => setTab('mainline')}
+            className={`pb-2 px-3 text-xs font-bold ${tab === 'mainline' ? 'text-sleeper-accent border-b-2 border-sleeper-accent' : 'text-gray-400'}`}
+          >
+            Game Line
+          </button>
+          <button
+            onClick={() => setTab('custom')}
+            className={`pb-2 px-3 text-xs font-bold ${tab === 'custom' ? 'text-sleeper-accent border-b-2 border-sleeper-accent' : 'text-gray-400'}`}
+          >
+            Custom
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {tab === 'prop' ? (
+            <>
+              <PlayerSearchInput
+                players={activePlayers}
+                selectedPlayer={selectedPlayer}
+                onSelectPlayer={(p) => setSelectedPlayer(p)}
+              />
+              {selectedPlayer && (
+                <div className="p-2 bg-sleeper-dark rounded text-xs text-emerald-300 font-medium">
+                  Selected: {selectedPlayer.name} ({selectedPlayer.team})
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Prop Line / Milestone</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Anytime TD, Over 74.5 Rush Yds, 2+ TDs"
+                  value={propText}
+                  onChange={(e) => setPropText(e.target.value)}
+                  className="w-full bg-sleeper-dark border border-sleeper-border rounded-lg p-2.5 text-sm text-white"
+                />
+              </div>
+            </>
+          ) : tab === 'mainline' ? (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">NFL Team</label>
+                <select
+                  value={team}
+                  onChange={(e) => setTeam(e.target.value)}
+                  className="w-full bg-sleeper-dark border border-sleeper-border rounded-lg p-2.5 text-sm text-white"
+                >
+                  <option value="KC">Kansas City Chiefs</option>
+                  <option value="BAL">Baltimore Ravens</option>
+                  <option value="PHI">Philadelphia Eagles</option>
+                  <option value="DET">Detroit Lions</option>
+                  <option value="BUF">Buffalo Bills</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Market</label>
+                <select
+                  value={market}
+                  onChange={(e) => setMarket(e.target.value)}
+                  className="w-full bg-sleeper-dark border border-sleeper-border rounded-lg p-2.5 text-sm text-white"
+                >
+                  <option value="spread">Team Spread (-110)</option>
+                  <option value="moneyline">Moneyline</option>
+                  <option value="game_total">Game Total Over (-110)</option>
+                </select>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">NFL Team</label>
+                <select
+                  value={team}
+                  onChange={(e) => setTeam(e.target.value)}
+                  className="w-full bg-sleeper-dark border border-sleeper-border rounded-lg p-2.5 text-sm text-white"
+                >
+                  <option value="KC">Kansas City Chiefs</option>
+                  <option value="BAL">Baltimore Ravens</option>
+                  <option value="PHI">Philadelphia Eagles</option>
+                  <option value="DET">Detroit Lions</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1">Description</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Lions 1st Half Over 13.5"
+                  value={customText}
+                  onChange={(e) => setCustomText(e.target.value)}
+                  className="w-full bg-sleeper-dark border border-sleeper-border rounded-lg p-2.5 text-sm text-white"
+                />
+              </div>
+            </>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 mb-1">American Odds from Sportsbook</label>
+            <input
+              type="text"
+              required
+              placeholder="-110 or +150"
+              value={odds}
+              onChange={(e) => setOdds(e.target.value)}
+              className="w-full bg-sleeper-dark border border-sleeper-border rounded-lg p-2.5 text-sm text-white font-mono"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full py-2.5 bg-sleeper-accent text-black font-bold rounded-lg hover:brightness-110 transition mt-2"
+          >
+            Submit Leg
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add frontend/src/components/PlayerSearchInput.tsx frontend/src/components/PickModal.tsx
+git commit -m "feat: implement sleeper active players autocomplete and pick modal"
+```
+
+---
+
+### Task 8: Read-Only Past Slips Archive & App Integration
+
+**Files:**
+- Create: `frontend/src/components/PastSlipsArchive.tsx`
+- Modify: `frontend/src/App.tsx`
+
+**Interfaces:**
+- Produces: Clean, read-only past slips drawer without win/loss tracking, fully assembled into the app shell.
+
+- [ ] **Step 1: Create `frontend/src/components/PastSlipsArchive.tsx`**
+
+```tsx
+import React from 'react';
+import { History, X } from 'lucide-react';
+import { WeeklyParlay } from '../types';
+
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+  pastParlays: WeeklyParlay[];
+}
+
+export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays }) => {
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
       <div className="bg-sleeper-card border border-sleeper-border rounded-xl w-full max-w-lg p-5 shadow-2xl">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-white">Grade Week {parlay.week} Parlay</h3>
+          <div className="flex items-center space-x-2">
+            <History className="w-5 h-5 text-sleeper-accent" />
+            <h3 className="text-lg font-bold text-white">Past Parlay Slips</h3>
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-          {parlay.legs.map((leg) => {
-            const current = grades[leg.id];
-            return (
-              <div key={leg.id} className="p-3 bg-sleeper-dark rounded-lg flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-white">{leg.owner_name}</span>
-                  <p className="text-xs text-gray-300">{leg.description}</p>
+        {pastParlays.length === 0 ? (
+          <p className="text-xs text-gray-400 text-center py-8">No past parlay slips recorded yet.</p>
+        ) : (
+          <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
+            {pastParlays.map(p => (
+              <div key={p.week} className="p-3 bg-sleeper-dark rounded-lg border border-sleeper-border">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold text-sleeper-accent uppercase">Week {p.week}</span>
+                  <span className="text-xs text-gray-400">Bettor: {p.bettor.owner_name}</span>
                 </div>
-                <div className="flex space-x-1.5">
-                  <button
-                    onClick={() => setLegStatus(leg.id, 'won')}
-                    className={`p-1.5 rounded ${current === 'won' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-                    title="Won"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setLegStatus(leg.id, 'lost')}
-                    className={`p-1.5 rounded ${current === 'lost' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-                    title="Lost"
-                  >
-                    <XCircle className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setLegStatus(leg.id, 'push')}
-                    className={`p-1.5 rounded ${current === 'push' ? 'bg-amber-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-                    title="Push / Void"
-                  >
-                    <MinusCircle className="w-4 h-4" />
-                  </button>
+                <div className="text-xs text-white font-bold mb-2">
+                  Odds: {p.actual_odds_american || p.estimated_odds_american} • Payout: ${p.actual_payout?.toFixed(2) || p.estimated_payout.toFixed(2)}
                 </div>
+                <ul className="text-[11px] text-gray-300 space-y-1">
+                  {p.legs.map((l, i) => (
+                    <li key={i} className="flex justify-between">
+                      <span>{l.owner_name}: {l.description}</span>
+                      <span className="font-mono text-gray-400">{l.odds_american}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            );
-          })}
-        </div>
-
-        <button
-          onClick={handleSave}
-          className="w-full py-2.5 bg-sleeper-accent text-black font-bold rounded-lg hover:brightness-110 transition mt-5"
-        >
-          Save Ticket Grading
-        </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 };
 ```
 
-- [ ] **Step 2: Commit**
-
-```bash
-git add frontend/src/components/GradeTicketModal.tsx
-git commit -m "feat: implement manual ticket grading modal"
-```
-
----
-
-### Task 9: App Assembly & Full Verification
-
-**Files:**
-- Modify: `frontend/src/App.tsx`
-- Modify: `frontend/src/components/ParlayCard.tsx`
-
-**Interfaces:**
-- Produces: Integrated frontend showing countdown to earliest kickoff and button to launch Grade Ticket dialog.
-
-- [ ] **Step 1: Update `frontend/src/components/ParlayCard.tsx` with Earliest Kickoff Badge**
-
-```tsx
-import React from 'react';
-import { AlertTriangle, Lock, Clock } from 'lucide-react';
-import { WeeklyParlay } from '../types';
-
-interface Props {
-  parlay: WeeklyParlay;
-  onOpenPickModal: (rosterId: number) => void;
-  currentRosterId: number | null;
-  onOpenGradeModal: () => void;
-}
-
-export const ParlayCard: React.FC<Props> = ({ parlay, onOpenPickModal, currentRosterId, onOpenGradeModal }) => {
-  return (
-    <div className="bg-sleeper-card border border-sleeper-border rounded-xl shadow-xl overflow-hidden mb-6">
-      <div className="p-4 bg-sleeper-dark/50 border-b border-sleeper-border flex items-center justify-between">
-        <div>
-          <span className="text-xs font-semibold text-sleeper-accent uppercase tracking-wider">
-            Active Ticket • Week {parlay.week}
-          </span>
-          <div className="flex items-baseline space-x-2 mt-0.5">
-            <span className="text-2xl font-black text-white">
-              {parlay.actual_odds_american || parlay.estimated_odds_american}
-            </span>
-            <span className="text-sm font-medium text-emerald-400">
-              Est. Payout: ${parlay.actual_payout?.toFixed(2) || parlay.estimated_payout.toFixed(2)}
-            </span>
-          </div>
-        </div>
-        <div className="text-right">
-          <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
-            parlay.status === 'locked' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
-          }`}>
-            {parlay.status === 'locked' ? (parlay.resolution === 'pending' ? 'Locked' : parlay.resolution.toUpperCase()) : 'Open'}
-          </span>
-        </div>
-      </div>
-
-      {parlay.earliest_kickoff && parlay.status === 'open' && (
-        <div className="bg-blue-950/40 border-b border-blue-500/30 p-2.5 flex items-center space-x-2 text-xs text-blue-200">
-          <Clock className="w-4 h-4 text-blue-400 shrink-0" />
-          <span>Ticket must be locked before earliest leg kicks off ({new Date(parlay.earliest_kickoff).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})</span>
-        </div>
-      )}
-
-      {parlay.contains_sgp && (
-        <div className="bg-amber-950/40 border-b border-amber-500/30 p-3 flex items-start space-x-2">
-          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-200 leading-relaxed">
-            <strong>Same Game Parlay (SGP) Detected:</strong> Multiple legs share the same game. Sportsbooks discount correlated odds. Check your betting app for actual payout.
-          </p>
-        </div>
-      )}
-
-      <div className="divide-y divide-sleeper-border">
-        {parlay.legs.map((leg, index) => (
-          <div key={leg.id || index} className="p-3 hover:bg-white/5 transition flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <span className="text-xs font-bold text-gray-500 w-4">{index + 1}</span>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm font-semibold text-white">{leg.owner_name}</span>
-                  {leg.result_status === 'won' && <span className="text-xs text-emerald-400 font-bold">✅ Won</span>}
-                  {leg.result_status === 'lost' && <span className="text-xs text-red-400 font-bold">❌ Lost</span>}
-                  {leg.result_status === 'push' && <span className="text-xs text-amber-400 font-bold">⚪ Push</span>}
-                </div>
-                <p className="text-xs text-gray-300 mt-0.5">{leg.description}</p>
-              </div>
-            </div>
-            <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/40 px-2 py-1 rounded">
-              {leg.odds_american}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {parlay.status === 'locked' && (
-        <div className="p-3 bg-sleeper-dark/40 border-t border-sleeper-border text-center">
-          <button
-            onClick={onOpenGradeModal}
-            className="text-xs font-bold text-sleeper-accent hover:underline"
-          >
-            📋 Grade Ticket Legs
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
-```
-
-- [ ] **Step 2: Update `frontend/src/App.tsx` with Grade Modal Handlers**
+- [ ] **Step 2: Update `frontend/src/App.tsx`**
 
 ```tsx
 import React, { useState } from 'react';
@@ -1135,15 +1203,22 @@ import { BettorBanner } from './components/BettorBanner';
 import { ParlayCard } from './components/ParlayCard';
 import { PickModal } from './components/PickModal';
 import { BreakGlassModal } from './components/BreakGlassModal';
-import { GradeTicketModal } from './components/GradeTicketModal';
+import { PastSlipsArchive } from './components/PastSlipsArchive';
 import { SleeperChatExport } from './components/SleeperChatExport';
-import { WeeklyParlay } from './types';
+import { WeeklyParlay, ActivePlayer } from './types';
 
-const initialMockParlay: WeeklyParlay = {
+const mockActivePlayers: ActivePlayer[] = [
+  { id: '1', name: 'Saquon Barkley', team: 'PHI', position: 'RB' },
+  { id: '2', name: 'Derrick Henry', team: 'BAL', position: 'RB' },
+  { id: '3', name: 'Patrick Mahomes', team: 'KC', position: 'QB' },
+  { id: '4', name: 'Amon-Ra St. Brown', team: 'DET', position: 'WR' },
+  { id: '5', name: 'Josh Allen', team: 'BUF', position: 'QB' },
+];
+
+const mockCurrentParlay: WeeklyParlay = {
   week: 4,
   season: '2026',
   status: 'open',
-  resolution: 'pending',
   contains_sgp: false,
   bettor: {
     roster_id: 2,
@@ -1159,12 +1234,11 @@ const initialMockParlay: WeeklyParlay = {
       team_name: 'Philly Special',
       owner_name: 'Blake',
       nfl_team: 'PHI',
-      description: 'Eagles -3.5 Spread',
-      odds_american: '-110',
-      odds_decimal: 1.91,
+      description: 'Saquon Barkley - Anytime TD',
+      odds_american: '-115',
+      odds_decimal: 1.87,
       is_default_roll: false,
       status: 'submitted',
-      result_status: 'pending',
       kickoff_time: '2026-09-27T17:00:00Z'
     },
     {
@@ -1178,37 +1252,42 @@ const initialMockParlay: WeeklyParlay = {
       odds_decimal: 1.77,
       is_default_roll: false,
       status: 'submitted',
-      result_status: 'pending',
-      kickoff_time: '2026-09-24T20:15:00Z' // TNF
+      kickoff_time: '2026-09-24T20:15:00Z'
     }
   ],
-  estimated_odds_american: '+238',
-  estimated_multiplier: 3.38,
-  estimated_payout: 16.90,
+  estimated_odds_american: '+231',
+  estimated_multiplier: 3.31,
+  estimated_payout: 16.55,
   actual_payout: null
 };
 
 export const App: React.FC = () => {
-  const [parlay, setParlay] = useState<WeeklyParlay>(initialMockParlay);
+  const [parlay, setParlay] = useState<WeeklyParlay>(mockCurrentParlay);
   const [isPickOpen, setIsPickOpen] = useState(false);
   const [isBreakGlassOpen, setIsBreakGlassOpen] = useState(false);
-  const [isGradeOpen, setIsGradeOpen] = useState(false);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const [currentRosterId] = useState<number>(1);
 
-  const handleSaveGrades = (grades: Record<string, string>) => {
-    let hasLoss = false;
-    let allDecided = true;
-    const updatedLegs = parlay.legs.map(leg => {
-      const g = grades[leg.id] as any || leg.result_status;
-      if (g === 'lost') hasLoss = true;
-      if (g === 'pending') allDecided = false;
-      return { ...leg, result_status: g };
-    });
-
+  const handlePickSubmit = (pick: any) => {
     setParlay(prev => ({
       ...prev,
-      legs: updatedLegs,
-      resolution: hasLoss ? 'lost' : (allDecided ? 'won' : 'pending')
+      legs: prev.legs.map(leg =>
+        leg.roster_id === currentRosterId
+          ? { ...leg, description: pick.description, nfl_team: pick.nfl_team, odds_american: pick.odds_american }
+          : leg
+      )
+    }));
+  };
+
+  const handleFinalize = (isBreakGlass: boolean) => {
+    setParlay(prev => ({
+      ...prev,
+      status: 'locked',
+      finalized_by: {
+        roster_id: currentRosterId,
+        owner_name: 'Blake',
+        is_break_glass: isBreakGlass
+      }
     }));
   };
 
@@ -1219,9 +1298,17 @@ export const App: React.FC = () => {
           <span>🏈</span>
           <span>TEAM PARLAY</span>
         </h1>
-        <span className="text-xs bg-sleeper-border px-2 py-1 rounded text-gray-300 font-mono">
-          Week {parlay.week}
-        </span>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setIsArchiveOpen(true)}
+            className="text-xs bg-sleeper-card border border-sleeper-border px-2.5 py-1 rounded text-gray-300 hover:text-white"
+          >
+            History
+          </button>
+          <span className="text-xs bg-sleeper-border px-2 py-1 rounded text-gray-300 font-mono">
+            Week {parlay.week}
+          </span>
+        </div>
       </header>
 
       <BettorBanner parlay={parlay} />
@@ -1230,7 +1317,6 @@ export const App: React.FC = () => {
         parlay={parlay}
         onOpenPickModal={() => setIsPickOpen(true)}
         currentRosterId={currentRosterId}
-        onOpenGradeModal={() => setIsGradeOpen(true)}
       />
 
       <div className="space-y-3 mb-8">
@@ -1245,11 +1331,26 @@ export const App: React.FC = () => {
         )}
       </div>
 
-      <GradeTicketModal
-        isOpen={isGradeOpen}
-        onClose={() => setIsGradeOpen(false)}
-        parlay={parlay}
-        onSaveGrades={handleSaveGrades}
+      <PickModal
+        isOpen={isPickOpen}
+        onClose={() => setIsPickOpen(false)}
+        onSubmitPick={handlePickSubmit}
+        rosterName="Philly Special"
+        activePlayers={mockActivePlayers}
+      />
+
+      <BreakGlassModal
+        isOpen={isBreakGlassOpen}
+        onClose={() => setIsBreakGlassOpen(false)}
+        onConfirm={handleFinalize}
+        bettorName={parlay.bettor.owner_name}
+        isBettor={parlay.bettor.roster_id === currentRosterId}
+      />
+
+      <PastSlipsArchive
+        isOpen={isArchiveOpen}
+        onClose={() => setIsArchiveOpen(false)}
+        pastParlays={[]}
       />
     </div>
   );
@@ -1259,16 +1360,16 @@ export const App: React.FC = () => {
 - [ ] **Step 3: Run full backend unit tests**
 
 Run: `PYTHONPATH=functions ./venv/bin/pytest functions/tests/ -v`  
-Expected: PASS (All 14 tests passing)
+Expected: PASS (All tests passing)
 
 - [ ] **Step 4: Build frontend bundle to verify TypeScript & styles**
 
 Run: `cd frontend && npm run build`  
-Expected: `vite build` succeeds with zero errors.
+Expected: `vite build` completes with zero errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add frontend/
-git commit -m "feat: integrate earliest kickoff countdown, manual grading modal, and verify build"
+git commit -m "feat: complete frontend assembly with sleeper player autocomplete and read-only archive"
 ```
