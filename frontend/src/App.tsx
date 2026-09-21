@@ -329,13 +329,35 @@ export const App: React.FC = () => {
         const defaults = teamProfile?.default_legs || [];
         const pickedFallback = defaults.length > 0 ? defaults[0] : null;
 
+        let snappedDesc = `${leg.nfl_team} -3.5 Spread`;
+        let snappedOdds = '-110';
+        let snappedDecimal = 1.91;
+
+        if (pickedFallback) {
+          if (pickedFallback.market_type === 'spread') {
+            snappedDesc = `${pickedFallback.nfl_team} -3.5 Spread`;
+            snappedOdds = '-110';
+            snappedDecimal = 1.91;
+          } else if (pickedFallback.market_type === 'moneyline') {
+            snappedDesc = `${pickedFallback.nfl_team} Moneyline`;
+            snappedOdds = '-135';
+            snappedDecimal = 1.74;
+          } else if (pickedFallback.market_type === 'game_total') {
+            snappedDesc = `${pickedFallback.nfl_team} Game Total OVER 46.5`;
+            snappedOdds = '-110';
+            snappedDecimal = 1.91;
+          } else {
+            snappedDesc = pickedFallback.description_template;
+            snappedOdds = '-115';
+            snappedDecimal = 1.87;
+          }
+        }
+
         return {
           ...leg,
-          description: pickedFallback
-            ? `${pickedFallback.description_template} (Line Snapped)`
-            : `${leg.nfl_team} Spread (-110)`,
-          odds_american: '-110',
-          odds_decimal: 1.91,
+          description: snappedDesc,
+          odds_american: snappedOdds,
+          odds_decimal: snappedDecimal,
           is_default_roll: true,
           status: 'submitted',
         };
