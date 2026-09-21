@@ -222,10 +222,10 @@ export const ParlayCard: React.FC<Props> = ({
                           }}
                           title={`View ${team.team_name || leg.team_name}'s fallback default picks (${defaultsCount} configured)`}
                           aria-label={`View ${team.team_name || leg.team_name}'s fallback default picks (${defaultsCount} configured)`}
-                          className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 active:bg-purple-800 border border-purple-500/40 text-purple-300 hover:text-purple-100 transition shadow-sm cursor-pointer"
+                          className="relative before:absolute before:-inset-2 before:content-[''] inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 active:bg-purple-800 border border-purple-500/40 text-purple-300 hover:text-purple-100 transition shadow-sm cursor-pointer"
                         >
                           <Dice5 className="w-3 h-3 text-purple-400 shrink-0" />
-                          <span className="hidden sm:inline">{defaultsCount} Defaults</span>
+                          <span>{defaultsCount} Defaults</span>
                         </button>
                       ) : (
                         <button
@@ -239,10 +239,10 @@ export const ParlayCard: React.FC<Props> = ({
                           }}
                           title={`${team.team_name || leg.team_name} has no fallback default picks configured`}
                           aria-label={`${team.team_name || leg.team_name} has no fallback default picks configured`}
-                          className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-950/60 hover:bg-amber-900/80 active:bg-amber-800 border border-amber-500/40 text-amber-300 hover:text-amber-100 transition shadow-sm cursor-pointer"
+                          className="relative before:absolute before:-inset-2 before:content-[''] inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-950/60 hover:bg-amber-900/80 active:bg-amber-800 border border-amber-500/40 text-amber-300 hover:text-amber-100 transition shadow-sm cursor-pointer"
                         >
                           <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
-                          <span className="hidden sm:inline">No Defaults</span>
+                          <span>No Defaults</span>
                         </button>
                       )
                     )}
