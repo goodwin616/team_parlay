@@ -58,9 +58,10 @@ This application provides a lightweight, mobile-first web app to manage this wee
    * `/v1/league/<id>/rosters` & `/v1/league/<id>/users`: Team names, avatars, and owner details.
    * `/v1/players/nfl`: Master database of all NFL players, filtered and cached for autocomplete.
    * *Requirement:* Sleeper league privacy must be set to Public (default).
-2. **The Odds API (Free Tier Quota Optimization):**
-   * **Mainline Game Cache:** Scheduled Cloud Scheduler cron queries `/v4/sports/americanfootball_nfl/odds?regions=us&markets=h2h,spreads,totals`. Grouped call returns all NFL games for **1 credit per call** (~40 requests/month out of 500 limit).
-   * **On-Demand Player Props:** When a user picks a player, only that single game event (`/events/{eventId}/odds`) is fetched and cached in Firestore for 4 hours (1–2 credits). Total monthly consumption remains well under 100 credits.
+2. **The Odds API (Free Tier Quota Optimization with DraftKings):**
+   * **Bookmaker Preference:** Queries strictly **DraftKings** (`bookmakers=draftkings`) to ensure all game lines and prop odds match DraftKings sportsbook pricing.
+   * **Mainline Game Cache:** Scheduled Cloud Scheduler cron queries `/v4/sports/americanfootball_nfl/odds?regions=us&markets=h2h,spreads,totals&bookmakers=draftkings`. Grouped call returns all NFL games for **1 credit per call** (~40 requests/month out of 500 limit).
+   * **On-Demand Player Props:** When a user picks a player, only that single game event (`/events/{eventId}/odds?bookmakers=draftkings`) is fetched and cached in Firestore for 4 hours (1–2 credits). Total monthly consumption remains well under 100 credits.
 
 ---
 
