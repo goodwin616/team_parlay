@@ -165,6 +165,14 @@ export const ParlayCard: React.FC<Props> = ({
           return (
             <div
               key={leg.id || `leg-${index}`}
+              role={canEdit ? 'button' : undefined}
+              tabIndex={canEdit ? 0 : undefined}
+              onKeyDown={canEdit ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onOpenPickModal(leg);
+                }
+              } : undefined}
               onClick={canEdit ? () => onOpenPickModal(leg) : undefined}
               className={`p-3.5 flex items-center justify-between transition ${
                 canEdit ? 'cursor-pointer hover:bg-sleeper-accent/10 active:scale-[0.995]' : ''
@@ -209,8 +217,9 @@ export const ParlayCard: React.FC<Props> = ({
                     )}
 
                     {isCurrentUserLeg && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-sleeper-accent/20 text-sleeper-accent">
-                        You
+                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-sleeper-accent/15 border border-sleeper-accent/30 text-sleeper-accent text-[10px] font-bold">
+                        <Edit3 className="w-3 h-3" />
+                        <span>You • Edit</span>
                       </span>
                     )}
                   </div>
@@ -223,34 +232,19 @@ export const ParlayCard: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Odds & Edit Action */}
-              <div className="flex items-center space-x-2 shrink-0">
+              {/* Odds Column - Uniform width and strictly right-aligned */}
+              <div className="shrink-0 flex items-center justify-end pl-3">
                 {isSubmitted ? (
-                  <span className="font-mono text-xs font-bold px-2 py-1 rounded bg-sleeper-dark border border-sleeper-border text-sleeper-accent">
+                  <span className="font-mono text-xs font-bold w-14 text-center py-1 rounded bg-sleeper-dark border border-sleeper-border text-sleeper-accent shadow-sm">
                     {leg.odds_american}
                   </span>
                 ) : (
                   <span 
                     title="Waiting for pick submission (will snap from fallback default pool if deadline passes)"
-                    className="font-mono text-xs font-semibold px-2 py-1 rounded bg-sleeper-dark border border-dashed border-gray-600 text-gray-300"
+                    className="font-mono text-xs font-semibold w-14 text-center py-1 rounded bg-sleeper-dark border border-dashed border-gray-600 text-gray-300"
                   >
                     TBD
                   </span>
-                )}
-
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenPickModal(leg);
-                    }}
-                    className="min-w-[44px] min-h-[44px] p-2 rounded-xl bg-sleeper-accent/15 border border-sleeper-accent/40 text-sleeper-accent hover:bg-sleeper-accent/25 active:bg-sleeper-accent/30 transition flex items-center justify-center shadow-sm active:scale-95"
-                    title="Edit Your Leg"
-                    aria-label="Edit Your Leg"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
                 )}
               </div>
             </div>
