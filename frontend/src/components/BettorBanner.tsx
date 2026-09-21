@@ -41,7 +41,7 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
               </span>
               <span className="text-gray-400">prior week</span>
               <span className="text-gray-600">•</span>
-              <span className="text-gray-300">On the hook for this week's $5 parlay ticket</span>
+              <span className="text-gray-300">On the hook for this week's parlay ticket</span>
             </div>
           </div>
         </div>

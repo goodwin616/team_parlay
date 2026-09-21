@@ -180,7 +180,7 @@ export const PickModal: React.FC<Props> = ({
   const getCategoriesForPosition = (pos?: string): string[] => {
     switch (pos?.toUpperCase()) {
       case 'QB':
-        return ['Pass Yards', 'Pass TDs', 'Rush Yards', 'Anytime TD'];
+        return ['Pass Yards', 'Pass TDs', 'Rush Yards', 'Touchdowns'];
       case 'RB':
         return ['Touchdowns', 'Rush Yards', 'Rec Yards', 'Receptions'];
       case 'WR':
@@ -627,7 +627,7 @@ export const PickModal: React.FC<Props> = ({
                     }`}
                   >
                     <span className="text-xs text-sleeper-muted block">Moneyline</span>
-                    <div className="font-bold text-sm">{selectedGame.away_team} ML</div>
+                    <div className="font-bold text-sm">{selectedGame.away_team}</div>
                     <span className="text-xs font-mono text-sleeper-accent">
                       {selectedGame.ml_away.odds}
                     </span>
@@ -644,7 +644,7 @@ export const PickModal: React.FC<Props> = ({
                     }`}
                   >
                     <span className="text-xs text-sleeper-muted block">Moneyline</span>
-                    <div className="font-bold text-sm">{selectedGame.home_team} ML</div>
+                    <div className="font-bold text-sm">{selectedGame.home_team}</div>
                     <span className="text-xs font-mono text-sleeper-accent">
                       {selectedGame.ml_home.odds}
                     </span>

@@ -108,7 +108,7 @@ export const ParlayCard: React.FC<Props> = ({
           </div>
           <div className="text-right">
             <span className="text-[10px] text-gray-400 uppercase font-bold block leading-none">
-              {parlay.actual_payout ? 'Actual Payout' : '$5 Stake Payout'}
+              {parlay.actual_payout ? 'Actual Payout' : 'Est. Payout'}
             </span>
             <span className="text-lg font-black font-mono text-sleeper-accent">
               ${parlay.actual_payout?.toFixed(2) || parlay.estimated_payout.toFixed(2)}
