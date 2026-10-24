@@ -180,6 +180,82 @@ def extract_kalshi_price_cents(market: Dict[str, Any], side: str = "yes") -> int
         val_cents = 54.0
     return max(1, min(99, int(round(val_cents))))
 
+class KalshiTradingBlockedError(RuntimeError):
+    """Raised when code attempts a Kalshi request that could result in a trade."""
+
+
+# ---------------------------------------------------------------------------
+# SAFETY: This app is a read-only price viewer. It must NEVER trade.
+#
+# Every authenticated Kalshi request is signed in `_build_auth_headers`, which
+# calls `assert_request_cannot_trade` first. Only the write endpoints below are
+# allowed, and none of them can move money:
+#   - POST   /multivariate_event_collections/{ticker}  -> look up / create combo market
+#   - POST   /communications/rfqs                       -> ask market makers for a price
+#   - DELETE /communications/rfqs/{id}                  -> withdraw that request
+# A Kalshi RFQ only executes if the creator ACCEPTS a quote (PUT .../accept) and
+# the maker then confirms. Accept/confirm, orders, order groups, transfers, and
+# every other PUT/PATCH/POST/DELETE are rejected before a signature is produced.
+# ---------------------------------------------------------------------------
+_KALSHI_API_PREFIX = "/trade-api/v2"
+_ALLOWED_WRITE_ENDPOINTS = (
+    ("POST", re.compile(r"^/multivariate_event_collections/[A-Za-z0-9_.-]+$")),
+    ("POST", re.compile(r"^/communications/rfqs$")),
+    ("DELETE", re.compile(r"^/communications/rfqs/[A-Za-z0-9-]+$")),
+)
+
+
+def assert_request_cannot_trade(method: str, path: str) -> None:
+    method_u = (method or "").upper()
+    rel = urllib.parse.urlsplit(path or "").path
+    if rel.startswith(_KALSHI_API_PREFIX):
+        rel = rel[len(_KALSHI_API_PREFIX):]
+    rel = "/" + rel.lstrip("/")
+    if ".." in rel or "//" in rel:
+        raise KalshiTradingBlockedError(f"Blocked suspicious Kalshi path: {rel}")
+    if method_u == "GET":
+        return
+    for allowed_method, pattern in _ALLOWED_WRITE_ENDPOINTS:
+        if method_u == allowed_method and pattern.match(rel):
+            return
+    raise KalshiTradingBlockedError(
+        f"Blocked Kalshi request {method_u} {rel}: this app never trades"
+    )
+
+
+def best_rfq_yes_cost_cents(quotes: List[Dict[str, Any]]) -> Optional[float]:
+    """
+    Converts market-maker RFQ quotes into what it would cost to buy YES on the combo.
+    A quote's `no_bid_dollars` is what the maker pays for NO, so buying YES from
+    them costs `1 - no_bid`. Returns the cheapest YES cost in cents, or None.
+    """
+    best: Optional[float] = None
+    for q in quotes or []:
+        if str(q.get("status", "open")).lower() != "open":
+            continue
+        cost: Optional[float] = None
+        # 1. Direct yes_ask_dollars if provided
+        if q.get("yes_ask_dollars") is not None:
+            try:
+                val = float(q["yes_ask_dollars"]) * 100.0
+                if 0.0 < val < 100.0:
+                    cost = val
+            except (TypeError, ValueError):
+                pass
+        # 2. Implied from maker's NO bid (buying YES == selling NO to maker)
+        if cost is None and q.get("no_bid_dollars") is not None:
+            try:
+                no_bid = float(q["no_bid_dollars"])
+                if 0.0 < no_bid < 1.0:
+                    cost = (1.0 - no_bid) * 100.0
+            except (TypeError, ValueError):
+                pass
+        if cost is not None:
+            if best is None or cost < best:
+                best = cost
+    return best
+
+
 class KalshiApiClient:
     """
     Client for Kalshi Trade API v2.
@@ -197,6 +273,7 @@ class KalshiApiClient:
         self.api_key_id = api_key_id
         self.private_key_path = private_key_path
         self.private_key_pem = private_key_pem
+        self._creator_user_id: Optional[str] = None
         if not self.private_key_pem and self.private_key_path:
             self.private_key_pem = self._load_key_file(self.private_key_path)
 
@@ -224,6 +301,8 @@ class KalshiApiClient:
         clean_path = urllib.parse.urlsplit(path).path
         if not clean_path.startswith("/trade-api/v2"):
             clean_path = f"/trade-api/v2/{clean_path.lstrip('/')}"
+        # SAFETY: refuse to sign anything that could place, accept, or amend a trade.
+        assert_request_cannot_trade(method, clean_path)
         msg = f"{ts_ms}{method.upper()}{clean_path}".encode("utf-8")
 
         signature_b64 = ""
@@ -472,6 +551,111 @@ class KalshiApiClient:
                 return {**cached_mem, "cached": True}
             return {**fresh_board, "cached": False}
 
+    def request_rfq_combo_cents(
+        self,
+        combo_ticker: str,
+        timeout_seconds: float = 3.0,
+    ) -> Optional[float]:
+        """
+        Requests an RFQ quote from Kalshi market makers for a combo contract,
+        waits briefly for market-maker quotes to arrive, calculates the best YES
+        cost, and IMMEDIATELY cancels (deletes) the RFQ so no orders can ever be placed.
+
+        Zero Trading Risk Guarantee:
+        - assert_request_cannot_trade enforces that PUT (accept quote) and POST /orders
+          raise KalshiTradingBlockedError.
+        - rest_remainder=False ensures no leftover order on the orderbook.
+        - DELETE /communications/rfqs/{id} is strictly called in a finally block.
+        """
+        if not self.is_authenticated or not combo_ticker:
+            return None
+
+        rfq_path = "/communications/rfqs"
+        headers = self._build_auth_headers("POST", rfq_path)
+        body = {
+            "market_ticker": combo_ticker,
+            "contracts": 10,
+            "rest_remainder": False,
+        }
+        try:
+            resp = requests.post(
+                f"{self.base_url}{rfq_path}",
+                json=body,
+                headers=headers,
+                timeout=5,
+            )
+            resp.raise_for_status()
+            rfq_data = resp.json() or {}
+            rfq_id = rfq_data.get("id")
+            if not rfq_id:
+                return None
+        except Exception as exc:
+            logger.warning("Failed to create Kalshi RFQ for %s: %s", combo_ticker, exc)
+            return None
+
+        try:
+            # Look up creator_user_id once for filtering quotes
+            if not getattr(self, "_creator_user_id", None):
+                info_path = f"/communications/rfqs/{rfq_id}"
+                try:
+                    info_res = requests.get(
+                        f"{self.base_url}{info_path}",
+                        headers=self._build_auth_headers("GET", info_path),
+                        timeout=5,
+                    )
+                    if info_res.ok:
+                        self._creator_user_id = (
+                            info_res.json().get("rfq") or {}
+                        ).get("creator_user_id")
+                except Exception:
+                    pass
+
+            # Poll for quotes
+            start_t = time.time()
+            quotes_path = "/communications/quotes"
+            best_cost: Optional[float] = None
+
+            while (time.time() - start_t) < timeout_seconds:
+                time.sleep(0.5)
+                params: Dict[str, Any] = {"rfq_id": rfq_id, "limit": 100}
+                if getattr(self, "_creator_user_id", None):
+                    params["rfq_creator_user_id"] = self._creator_user_id
+
+                try:
+                    q_res = requests.get(
+                        f"{self.base_url}{quotes_path}",
+                        params=params,
+                        headers=self._build_auth_headers("GET", quotes_path),
+                        timeout=5,
+                    )
+                    if q_res.ok:
+                        quotes = (q_res.json() or {}).get("quotes", [])
+                        if quotes:
+                            best_cost = best_rfq_yes_cost_cents(quotes)
+                            if best_cost is not None:
+                                logger.info(
+                                    "Received %d Kalshi RFQ quotes for %s, best YES cost: %.1f cents",
+                                    len(quotes), combo_ticker, best_cost
+                                )
+                                break
+                except Exception as poll_exc:
+                    logger.warning("Error polling RFQ quotes: %s", poll_exc)
+                    break
+
+            return best_cost
+        finally:
+            # ALWAYS delete the RFQ immediately so no active RFQ remains
+            try:
+                del_path = f"/communications/rfqs/{rfq_id}"
+                requests.delete(
+                    f"{self.base_url}{del_path}",
+                    headers=self._build_auth_headers("DELETE", del_path),
+                    timeout=5,
+                )
+                logger.info("Deleted Kalshi RFQ %s cleanly", rfq_id)
+            except Exception as del_exc:
+                logger.warning("Failed to delete Kalshi RFQ %s: %s", rfq_id, del_exc)
+
     def fetch_combo_quote(
         self,
         legs: List[Dict[str, Any]],
@@ -524,37 +708,43 @@ class KalshiApiClient:
                 market_obj = mve_data.get("market") or {}
                 combo_ticker = market_obj.get("ticker") or mve_data.get("ticker")
 
-                # Combo (MVE) markets are usually created with an empty orderbook
-                # (yes_ask=$1.00, yes_bid=$0) because Kalshi prices them via RFQ.
-                # Only treat it as a live quote when a real resting ask exists;
-                # otherwise extract_kalshi_price_cents would fall back to 54¢.
-                try:
-                    live_ask = float(market_obj.get("yes_ask_dollars") or 0)
-                except (TypeError, ValueError):
-                    live_ask = 0.0
-                if combo_ticker and not (0.0 < live_ask < 1.0):
+                if combo_ticker:
+                    # 1. Check if market already has resting liquidity on the public book
+                    try:
+                        live_ask = float(market_obj.get("yes_ask_dollars") or 0)
+                    except (TypeError, ValueError):
+                        live_ask = 0.0
+
+                    combo_cents: Optional[int] = None
+                    if 0.0 < live_ask < 1.0:
+                        combo_cents = extract_kalshi_price_cents(market_obj, "yes")
+                    else:
+                        # 2. No resting orderbook: request live quotes from market makers via RFQ
+                        rfq_cents = self.request_rfq_combo_cents(combo_ticker, timeout_seconds=3.0)
+                        if rfq_cents is not None:
+                            combo_cents = max(1, min(99, int(round(rfq_cents))))
+
+                    if combo_cents is not None:
+                        multiplier = kalshi_cents_to_decimal(combo_cents)
+                        payout = round(stake * multiplier, 2)
+                        return {
+                            **base_stats,
+                            "multiplier": round(multiplier, 3),
+                            "estimated_payout": payout,
+                            "odds_american": kalshi_cents_to_american(combo_cents),
+                            "combined_probability_cents": combo_cents,
+                            "kalshi_combo_ticker": combo_ticker,
+                            "pricing_source": "kalshi_mve",
+                        }
+
                     logger.info(
-                        "Kalshi combo %s has no resting liquidity (yes_ask=%s); using compound pricing",
-                        combo_ticker, market_obj.get("yes_ask_dollars"),
+                        "Kalshi combo %s has no resting liquidity or RFQ quotes; using compound pricing",
+                        combo_ticker,
                     )
                     return {
                         **base_stats,
                         "kalshi_combo_ticker": combo_ticker,
                         "pricing_source": "kalshi_compound",
-                    }
-
-                if combo_ticker:
-                    combo_cents = extract_kalshi_price_cents(market_obj, "yes")
-                    multiplier = kalshi_cents_to_decimal(combo_cents)
-                    payout = round(stake * multiplier, 2)
-                    return {
-                        **base_stats,
-                        "multiplier": round(multiplier, 3),
-                        "estimated_payout": payout,
-                        "odds_american": kalshi_cents_to_american(combo_cents),
-                        "combined_probability_cents": combo_cents,
-                        "kalshi_combo_ticker": combo_ticker,
-                        "pricing_source": "kalshi_mve",
                     }
             except Exception as exc:
                 logger.warning("Kalshi combo quote failed, using compound pricing: %s", exc)

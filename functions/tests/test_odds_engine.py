@@ -232,3 +232,120 @@ def test_kalshi_api_client_loads_key_file(tmp_path):
     headers = client._build_auth_headers("GET", "/trade-api/v2/portfolio/balance")
     assert headers["KALSHI-ACCESS-KEY"] == "key_abc"
     assert headers["KALSHI-ACCESS-SIGNATURE"] != ""
+
+
+def test_trading_blocked_safety_guard():
+    from odds_engine import (
+        assert_request_cannot_trade,
+        KalshiTradingBlockedError,
+        best_rfq_yes_cost_cents,
+    )
+    import pytest
+
+    # Safe GET queries are permitted
+    assert_request_cannot_trade("GET", "/trade-api/v2/portfolio/balance")
+    assert_request_cannot_trade("GET", "/trade-api/v2/markets")
+    assert_request_cannot_trade("GET", "/trade-api/v2/communications/quotes")
+
+    # Safe MVE combo creation and RFQ creation/deletion are permitted
+    assert_request_cannot_trade("POST", "/trade-api/v2/multivariate_event_collections/KXMVE-TEST")
+    assert_request_cannot_trade("POST", "/trade-api/v2/communications/rfqs")
+    assert_request_cannot_trade("DELETE", "/trade-api/v2/communications/rfqs/rfq-uuid-123")
+
+    # ALL TRADING ACTIONS ARE STRICTLY BLOCKED:
+    # 1. Accepting a quote (PUT /communications/rfqs/.../accept)
+    with pytest.raises(KalshiTradingBlockedError):
+        assert_request_cannot_trade("PUT", "/trade-api/v2/communications/rfqs/123/quotes/456/accept")
+
+    # 2. Confirming a quote
+    with pytest.raises(KalshiTradingBlockedError):
+        assert_request_cannot_trade("PUT", "/trade-api/v2/communications/rfqs/123/quotes/456/confirm")
+
+    # 3. Placing orders
+    with pytest.raises(KalshiTradingBlockedError):
+        assert_request_cannot_trade("POST", "/trade-api/v2/portfolio/orders")
+    with pytest.raises(KalshiTradingBlockedError):
+        assert_request_cannot_trade("POST", "/trade-api/v2/orders")
+
+    # 4. Modifying orders or transferring funds
+    with pytest.raises(KalshiTradingBlockedError):
+        assert_request_cannot_trade("PUT", "/trade-api/v2/portfolio/orders/123")
+    with pytest.raises(KalshiTradingBlockedError):
+        assert_request_cannot_trade("POST", "/trade-api/v2/portfolio/transfers")
+
+
+def test_best_rfq_yes_cost_cents():
+    from odds_engine import best_rfq_yes_cost_cents
+
+    quotes = [
+        {"status": "canceled", "no_bid_dollars": "0.9000"},  # Ignored (canceled)
+        {"status": "open", "no_bid_dollars": "0.6000"},      # 1 - 0.60 = $0.40 -> 40.0 cents
+        {"status": "open", "no_bid_dollars": "0.6500"},      # 1 - 0.65 = $0.35 -> 35.0 cents (cheaper YES)
+        {"status": "open", "yes_ask_dollars": "0.3300"},     # 33.0 cents (best YES)
+    ]
+    best = best_rfq_yes_cost_cents(quotes)
+    assert best == 33.0
+
+
+def test_rfq_combo_quote_integration():
+    auth_client = KalshiApiClient(api_key_id="key_123", private_key_pem="mock_pem")
+    legs = [
+        {"kalshi_market_ticker": "KXNFLTD-1", "kalshi_side": "yes", "price_cents": 50},
+        {"kalshi_market_ticker": "KXNFLTD-2", "kalshi_side": "yes", "price_cents": 50},
+    ]
+
+    # When market has empty orderbook, client requests RFQ and uses returned quotes
+    with patch("requests.post") as mock_post, \
+         patch("requests.get") as mock_get, \
+         patch("requests.delete") as mock_delete, \
+         patch("time.sleep"):
+
+        # 1. MVE market creation returns market with no resting orders (yes_ask = 1.0)
+        mve_resp = MagicMock()
+        mve_resp.json.return_value = {
+            "market": {
+                "ticker": "KXMVE-COMBO-EMPTY",
+                "yes_ask_dollars": "1.0000",
+            }
+        }
+        mve_resp.raise_for_status.return_value = None
+
+        # 2. RFQ creation returns id
+        rfq_create_resp = MagicMock()
+        rfq_create_resp.json.return_value = {"id": "test-rfq-uuid"}
+        rfq_create_resp.raise_for_status.return_value = None
+
+        mock_post.side_effect = [mve_resp, rfq_create_resp]
+
+        # 3. GET rfq details + GET quotes
+        rfq_info_resp = MagicMock()
+        rfq_info_resp.ok = True
+        rfq_info_resp.json.return_value = {"rfq": {"creator_user_id": "creator-123"}}
+
+        quotes_resp = MagicMock()
+        quotes_resp.ok = True
+        quotes_resp.json.return_value = {
+            "quotes": [
+                {"status": "open", "no_bid_dollars": "0.6000"}  # 40 cents -> +150
+            ]
+        }
+        mock_get.side_effect = [rfq_info_resp, quotes_resp]
+
+        # 4. DELETE RFQ
+        mock_delete_resp = MagicMock()
+        mock_delete_resp.ok = True
+        mock_delete.return_value = mock_delete_resp
+
+        quote = auth_client.fetch_combo_quote(legs, stake=5.0)
+
+        assert quote["pricing_source"] == "kalshi_mve"
+        assert quote["kalshi_combo_ticker"] == "KXMVE-COMBO-EMPTY"
+        assert quote["combined_probability_cents"] == 40
+        assert quote["multiplier"] == 2.5
+        assert quote["estimated_payout"] == 12.50
+        assert quote["odds_american"] == "+150"
+
+        # Verify RFQ was strictly deleted for cleanup
+        mock_delete.assert_called_once()
+        assert "test-rfq-uuid" in mock_delete.call_args[0][0]
+

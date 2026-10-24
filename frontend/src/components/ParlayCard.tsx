@@ -120,7 +120,7 @@ export const ParlayCard: React.FC<Props> = ({
             {isOfficialQuote ? (
               <span
                 className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300"
-                title="Verified quote from placed combo ticket"
+                title="Verified quote from Kalshi RFQ market makers"
               >
                 Official Quote
               </span>

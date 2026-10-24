@@ -599,3 +599,4 @@ def get_kalshi_nfl_markets(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "cached": bool(board.get("cached", False)),
         "authenticated": kalshi_client.is_authenticated,
     }
+
