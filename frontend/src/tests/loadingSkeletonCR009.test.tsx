@@ -1,7 +1,23 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { LeagueSkeleton, HeaderSkeleton, BettorSpotlightSkeleton, ParlayCardSkeleton } from '../components/LeagueSkeleton';
 import { TeamLogo } from '../utils/nflTeams';
+
+vi.mock('../services/auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/auth')>();
+  return {
+    ...actual,
+    useAuthUser: () => ({
+      user: {
+        uid: 'user_blake',
+        displayName: 'Blake',
+        email: 'blake@example.com',
+      },
+      loading: false,
+    }),
+  };
+});
+
 import { App } from '../App';
 
 function cleanText(html: string): string {

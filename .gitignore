@@ -1,9 +1,13 @@
+venv
 venv/
 functions/venv
 __pycache__/
 *.pyc
 .pytest_cache/
+node_modules
 node_modules/
+**/node_modules
+**/node_modules/
 dist/
 .firebase/
 firebase-debug.log

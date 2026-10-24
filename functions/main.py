@@ -6,7 +6,7 @@ os.environ.setdefault("no_proxy", "*")
 os.environ.setdefault("NO_PROXY", "*")
 
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import firebase_admin
 from firebase_admin import firestore
@@ -18,10 +18,9 @@ from odds_engine import (
     KalshiApiClient,
 )
 from auth_utils import (
-    hash_pin,
-    generate_session_token,
-    verify_pin_and_issue_token,
-    verify_session_token,
+    actor_from_auth,
+    claim_status,
+    build_audit_entry,
 )
 from sleeper_sync import (
     fetch_sleeper_nfl_state,
@@ -31,7 +30,6 @@ from sleeper_sync import (
     determine_weekly_bettor,
 )
 
-SECRET_SALT = os.environ.get("PIN_SECRET_SALT", "team_parlay_salt_2026")
 KALSHI_API_BASE_URL = os.environ.get("KALSHI_API_BASE_URL", "https://api.elections.kalshi.com/trade-api/v2")
 KALSHI_API_KEY_ID = os.environ.get("KALSHI_API_KEY_ID", "")
 KALSHI_PRIVATE_KEY_PATH = os.environ.get("KALSHI_PRIVATE_KEY_PATH", "")
@@ -74,6 +72,15 @@ def get_kalshi_client() -> KalshiApiClient:
         private_key_pem=KALSHI_PRIVATE_KEY_PEM or None,
     )
 
+def require_actor(req: https_fn.CallableRequest) -> Dict[str, Any]:
+    try:
+        return actor_from_auth(getattr(req, "auth", None))
+    except Exception:
+        raise https_fn.HttpsError(
+            code=https_fn.FunctionsErrorCode.UNAUTHENTICATED,
+            message="Authentication required",
+        )
+
 # =====================================================================
 # Callable Firebase Functions (Multi-League & Season Scoped)
 # =====================================================================
@@ -85,6 +92,8 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
       leagues/{league_id}/seasons/{season}/teams/{roster_id}
       leagues/{league_id}/seasons/{season}/parlays/{week}
     """
+    require_actor(req)
+
     data = req.data or {}
     league_id = str(data.get("league_id", "")).strip()
     if not league_id:
@@ -99,8 +108,6 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
     existing_meta = league_doc.to_dict() if league_doc.exists else {}
 
     is_demo = league_id.lower() == "demo"
-    default_token = data.get("session_token", "demo_local_session_token")
-    default_pin_hash = hash_pin("1234", SECRET_SALT)
 
     # Try live Sleeper API (or client-fetched Sleeper payload) unless explicitly requesting 'demo'
     if not is_demo:
@@ -191,13 +198,14 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 team_ref = season_ref.collection("teams").document(rid)
                 existing_team = team_ref.get()
                 if existing_team.exists:
-                    team_ref.set(t, merge=True)
-                else:
-                    team_ref.set({
+                    # Update sleeper metadata, delete legacy pin fields, preserve claimed_by
+                    team_ref.update({
                         **t,
-                        "pin_hash": default_pin_hash,
-                        "session_tokens": [default_token],
+                        "pin_hash": firestore.DELETE_FIELD,
+                        "session_tokens": firestore.DELETE_FIELD,
                     })
+                else:
+                    team_ref.set(t)
 
             parlay_ref = season_ref.collection("parlays").document(str(current_week))
             if not parlay_ref.get().exists:
@@ -268,14 +276,22 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
     for t in fallback_teams:
         rid = str(t.get("roster_id"))
-        season_ref.collection("teams").document(rid).set({
+        team_ref = season_ref.collection("teams").document(rid)
+        existing_team = team_ref.get()
+        team_payload = {
             "roster_id": t.get("roster_id"),
             "owner_id": t.get("owner_id", f"u{rid}"),
             "owner_name": t.get("owner_name", f"Owner {rid}"),
             "team_name": t.get("team_name", f"Team {rid}"),
-            "pin_hash": default_pin_hash,
-            "session_tokens": [default_token],
-        }, merge=True)
+        }
+        if existing_team.exists:
+            team_ref.update({
+                **team_payload,
+                "pin_hash": firestore.DELETE_FIELD,
+                "session_tokens": firestore.DELETE_FIELD,
+            })
+        else:
+            team_ref.set(team_payload)
 
     for p in fallback_parlays:
         week = str(p.get("week"))
@@ -284,76 +300,165 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
     return {"success": True, "league": league_meta, "season": season, "source": "demo"}
 
 @https_fn.on_call()
-def verify_pin_login(req: https_fn.CallableRequest) -> Dict[str, Any]:
+def select_team(req: https_fn.CallableRequest) -> Dict[str, Any]:
+    """
+    Selects or claims a fantasy team within a league season.
+    Input: league_id, season, roster_id, confirm: bool
+    """
+    actor = require_actor(req)
+    uid = actor["uid"]
+
     data = req.data or {}
     league_id = str(data.get("league_id", "")).strip()
     roster_id = data.get("roster_id")
-    pin = str(data.get("pin", ""))
+    confirm = bool(data.get("confirm", False))
 
-    if not league_id or not roster_id or not pin:
+    if not league_id or roster_id is None:
         raise https_fn.HttpsError(
             code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT,
-            message="league_id, roster_id, and pin are required"
+            message="league_id and roster_id are required",
         )
 
     db = get_db()
     season = resolve_league_season(db, league_id, data.get("season"))
     season_ref = get_season_ref(db, league_id, season)
     team_ref = season_ref.collection("teams").document(str(roster_id))
-    team_doc = team_ref.get()
 
-    if not team_doc.exists:
-        raise https_fn.HttpsError(
-            code=https_fn.FunctionsErrorCode.NOT_FOUND,
-            message="Team not found in this league season"
+    transaction = db.transaction()
+
+    @firestore.transactional
+    def _select_team_tx(tx):
+        team_doc = team_ref.get(transaction=tx)
+        if not team_doc.exists:
+            raise https_fn.HttpsError(
+                code=https_fn.FunctionsErrorCode.NOT_FOUND,
+                message="Team not found in this league season",
+            )
+
+        team_data = team_doc.to_dict() or {}
+        claimed_by = team_data.get("claimed_by")
+        claimed_by_uid = claimed_by.get("uid") if claimed_by else None
+        status = claim_status(uid, claimed_by_uid)
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        if status == "unclaimed" and not confirm:
+            return {"status": "needs_claim_confirmation"}
+
+        audit_entry = None
+        if status == "unclaimed" and confirm:
+            claimed_by = {
+                "uid": uid,
+                "name": actor.get("name") or "",
+                "photo_url": actor.get("photo_url"),
+                "claimed_at": now_iso,
+            }
+            tx.update(team_ref, {"claimed_by": claimed_by})
+            audit_entry = build_audit_entry(
+                action="team_claimed",
+                actor=actor,
+                roster_id=roster_id,
+                after={"claimed_by": claimed_by},
+                now_iso=now_iso,
+            )
+        elif status == "mine":
+            audit_entry = build_audit_entry(
+                action="team_selected",
+                actor=actor,
+                roster_id=roster_id,
+                now_iso=now_iso,
+            )
+        elif status == "other" and not confirm:
+            return {
+                "status": "needs_override_confirmation",
+                "claimed_by": claimed_by,
+            }
+        elif status == "other" and confirm:
+            audit_entry = build_audit_entry(
+                action="team_selected_claimed_by_other",
+                actor=actor,
+                roster_id=roster_id,
+                extra={"claimed_by": claimed_by},
+                now_iso=now_iso,
+            )
+
+        user_league_ref = (
+            db.collection("users")
+            .document(uid)
+            .collection("leagues")
+            .document(league_id)
+        )
+        tx.set(
+            user_league_ref,
+            {
+                "roster_id": roster_id,
+                "season": season,
+                "updated_at": now_iso,
+            },
+            merge=True,
         )
 
-    team_data = team_doc.to_dict() or {}
-    stored_hash = team_data.get("pin_hash", "")
+        if audit_entry:
+            audit_ref = season_ref.collection("audit_log").document()
+            tx.set(audit_ref, audit_entry)
 
-    if not stored_hash:
-        # First-time PIN setup for this team
-        stored_hash = hash_pin(pin, SECRET_SALT)
-        token = generate_session_token()
-        team_ref.update({"pin_hash": stored_hash, "session_tokens": [token]})
-    else:
-        token = verify_pin_and_issue_token(pin, stored_hash, SECRET_SALT)
-        if not token:
-            raise https_fn.HttpsError(
-                code=https_fn.FunctionsErrorCode.UNAUTHENTICATED,
-                message="Invalid PIN"
-            )
-        tokens = team_data.get("session_tokens", [])
-        tokens.append(token)
-        tokens = tokens[-10:]
-        team_ref.update({"session_tokens": tokens})
+        return {
+            "status": status,
+            "roster_id": roster_id,
+            "claimed_by": claimed_by,
+        }
 
+    return _select_team_tx(transaction)
+
+@https_fn.on_call()
+def get_my_team(req: https_fn.CallableRequest) -> Any:
+    """
+    Returns saved roster_id and season from users/{uid}/leagues/{league_id} or null.
+    """
+    actor = require_actor(req)
+    uid = actor["uid"]
+
+    data = req.data or {}
+    league_id = str(data.get("league_id", "")).strip()
+    if not league_id:
+        raise https_fn.HttpsError(
+            code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT,
+            message="league_id is required",
+        )
+
+    db = get_db()
+    user_league_doc = (
+        db.collection("users")
+        .document(uid)
+        .collection("leagues")
+        .document(league_id)
+        .get()
+    )
+    if not user_league_doc.exists:
+        return None
+
+    doc_data = user_league_doc.to_dict() or {}
     return {
-        "success": True,
-        "session_token": token,
-        "league_id": league_id,
-        "season": season,
-        "roster_id": roster_id,
-        "team_name": team_data.get("team_name", ""),
-        "owner_name": team_data.get("owner_name", "")
+        "roster_id": doc_data.get("roster_id"),
+        "season": doc_data.get("season"),
     }
 
 @https_fn.on_call()
 def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
+    actor = require_actor(req)
+
     data = req.data or {}
     league_id = str(data.get("league_id", "")).strip()
-    session_token = data.get("session_token")
     roster_id = data.get("roster_id")
     week = data.get("week")
     leg = data.get("leg")
 
-    if not league_id or not session_token or not roster_id or not week or not leg:
+    if not league_id or roster_id is None or not week or not leg:
         raise https_fn.HttpsError(
             code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT,
-            message="league_id, session_token, roster_id, week, and leg are required"
+            message="league_id, roster_id, week, and leg are required"
         )
 
-    # Strictly disallow submitting a pick for another player
+    # Strictly disallow submitting a pick for another roster_id payload mismatch
     if leg.get("roster_id") is not None and int(leg.get("roster_id")) != int(roster_id):
         raise https_fn.HttpsError(
             code=https_fn.FunctionsErrorCode.PERMISSION_DENIED,
@@ -370,9 +475,8 @@ def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
         raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.NOT_FOUND, message="Team not found")
 
     team_data = team_doc.to_dict() or {}
-    valid_tokens = team_data.get("session_tokens", [])
-    if not verify_session_token(session_token, valid_tokens):
-        raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.UNAUTHENTICATED, message="Invalid session token")
+    claimed_by = team_data.get("claimed_by")
+    claimed_by_uid = claimed_by.get("uid") if claimed_by else None
 
     parlay_ref = season_ref.collection("parlays").document(str(week))
     parlay_doc = parlay_ref.get()
@@ -392,15 +496,27 @@ def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
     legs = parlay_data.get("legs", [])
     updated_legs = []
+    before = None
     replaced = False
+
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    is_non_claimer = claim_status(actor["uid"], claimed_by_uid) == "other"
 
     leg["roster_id"] = roster_id
     leg["team_name"] = team_data.get("team_name", f"Team {roster_id}")
     leg["owner_name"] = team_data.get("owner_name", f"Owner {roster_id}")
     leg["status"] = "submitted"
+    leg["last_edited_by"] = {
+        "uid": actor["uid"],
+        "name": actor.get("name") or "",
+        "photo_url": actor.get("photo_url"),
+    }
+    leg["last_edited_at"] = now_iso
+    leg["edited_by_non_claimer"] = is_non_claimer
 
     for existing in legs:
         if existing.get("roster_id") == roster_id:
+            before = dict(existing)
             updated_legs.append({**existing, **leg})
             replaced = True
         else:
@@ -414,7 +530,18 @@ def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
     earliest = calculate_earliest_kickoff(updated_legs)
     is_live_mve = stats.get("pricing_source") == "kalshi_mve"
 
-    parlay_ref.update({
+    audit_entry = build_audit_entry(
+        action="leg_submitted",
+        actor=actor,
+        roster_id=roster_id,
+        week=week,
+        before=before,
+        after=leg,
+        now_iso=now_iso,
+    )
+
+    batch = db.batch()
+    batch.update(parlay_ref, {
         "legs": updated_legs,
         "estimated_odds_american": stats["odds_american"],
         "estimated_multiplier": stats["multiplier"],
@@ -425,9 +552,11 @@ def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "actual_payout": stats["estimated_payout"] if is_live_mve else None,
         "actual_odds_american": stats["odds_american"] if is_live_mve else None,
     })
+    audit_ref = season_ref.collection("audit_log").document()
+    batch.set(audit_ref, audit_entry)
+    batch.commit()
 
     return {"success": True, "legs": updated_legs, "season": season}
-
 
 @https_fn.on_call()
 def get_kalshi_nfl_markets(req: https_fn.CallableRequest) -> Dict[str, Any]:
@@ -436,6 +565,8 @@ def get_kalshi_nfl_markets(req: https_fn.CallableRequest) -> Dict[str, Any]:
     using a 5-minute (300s) cache in memory + Firestore (`kalshi_cache/nfl_board_meta`)
     and refreshing automatically when cached data is older than 5 minutes.
     """
+    require_actor(req)
+
     data = req.data or {}
     force_refresh = bool(data.get("force_refresh", False))
     db = get_db()

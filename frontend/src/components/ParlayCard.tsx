@@ -336,6 +336,16 @@ export const ParlayCard: React.FC<Props> = ({
                       ({leg.owner_name})
                     </span>
 
+                    {leg.edited_by_non_claimer && (
+                      <span
+                        title={`Pick submitted by ${leg.last_edited_by?.name || 'another manager'}`}
+                        aria-label={`Pick submitted by ${leg.last_edited_by?.name || 'another manager'}`}
+                        className="inline-flex items-center text-xs text-amber-400 cursor-help"
+                      >
+                        ⚠️
+                      </span>
+                    )}
+
                     {isCurrentUserLeg && (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-sleeper-accent/15 text-sleeper-accent text-[10px] font-bold">
                         (You)

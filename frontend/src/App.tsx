@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   History,
-  KeyRound,
-  X,
   ArrowLeftRight,
+  UserCheck,
+  LogOut,
 } from 'lucide-react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -13,14 +13,18 @@ import { PickModal, PickData } from './components/PickModal';
 import { PastSlipsArchive } from './components/PastSlipsArchive';
 import { LeagueLandingPage } from './components/LeagueLandingPage';
 import { LeagueSkeleton } from './components/LeagueSkeleton';
+import { SignInGate } from './components/SignInGate';
+import { TeamPickerModal } from './components/TeamPickerModal';
 import { WeeklyParlay, ActivePlayer, TeamProfile, ParlayLeg, GameLineOption } from './types';
 import {
   fetchDirectKalshiNflBoard,
   KALSHI_BOARD_CACHE_TTL_MS,
 } from './services/kalshi';
 import {
-  saveSession,
-  getSession,
+  useAuthUser,
+  signOutUser,
+  saveCachedTeamId,
+  getCachedTeamId,
   getLeagueIdFromLocation,
   getRecentLeagues,
   saveRecentLeague,
@@ -28,8 +32,6 @@ import {
 } from './services/auth';
 import { db, functions } from './services/firebase';
 import { calculateParlayStats, OddsFormat } from './utils/parlayMath';
-
-const DEFAULT_LOCAL_SESSION_TOKEN = 'demo_local_session_token';
 
 // Master Database of active offensive NFL players from Sleeper
 const MOCK_ACTIVE_PLAYERS: ActivePlayer[] = [
@@ -237,6 +239,8 @@ const MOCK_PAST_PARLAYS: WeeklyParlay[] = [
 ];
 
 export const App: React.FC = () => {
+  const { user, loading: authLoading } = useAuthUser();
+
   // URL-based League ID State
   const [leagueId, setLeagueId] = useState<string | null>(() =>
     typeof window !== 'undefined' ? getLeagueIdFromLocation(window.location) : null
@@ -287,9 +291,10 @@ export const App: React.FC = () => {
   // Modals & Live Kalshi / Sleeper Player Board State
   const [isPickOpen, setIsPickOpen] = useState(false);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authPinInput, setAuthPinInput] = useState('');
-  const [authSelectedRoster, setAuthSelectedRoster] = useState<number>(1);
+  const [isTeamPickerOpen, setIsTeamPickerOpen] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
   const [activePlayers, setActivePlayers] = useState<ActivePlayer[]>(MOCK_ACTIVE_PLAYERS);
   const [kalshiGames, setKalshiGames] = useState<GameLineOption[]>([]);
   const [kalshiProps, setKalshiProps] = useState<any[]>([]);
@@ -297,7 +302,22 @@ export const App: React.FC = () => {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const lastKalshiFetchRef = useRef<number>(0);
 
-  // Load live Kalshi NFL markets & Sleeper active NFL players (cached for 5 mins, refreshes on query when >5 mins old)
+  // Close profile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setIsProfileMenuOpen(false);
+      }
+    };
+    if (isProfileMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isProfileMenuOpen]);
+
+  // Load live Kalshi NFL markets & Sleeper active NFL players
   const refreshKalshiBoardIfNeeded = async (force = false) => {
     const now = Date.now();
     if (
@@ -341,7 +361,7 @@ export const App: React.FC = () => {
       }
     };
 
-    // 1a. Try Cloud Function get_kalshi_nfl_markets (backed by 5-min Firestore + memory cache)
+    // 1a. Try Cloud Function get_kalshi_nfl_markets
     try {
       const kalshiFn = httpsCallable<
         Record<string, never>,
@@ -362,7 +382,7 @@ export const App: React.FC = () => {
       // Fallback to direct Kalshi fetch below
     }
 
-    // 1b. If Cloud Function hasn't been restarted or returned 0 markets, fetch directly from Kalshi
+    // 1b. Fallback direct Kalshi fetch
     if (!loadedLiveKalshi) {
       try {
         const directBoard = await fetchDirectKalshiNflBoard(force);
@@ -372,7 +392,7 @@ export const App: React.FC = () => {
       }
     }
 
-    // 2. Enrich positions from Sleeper (or fallback to Sleeper players only if Kalshi returned 0 markets)
+    // 2. Enrich positions from Sleeper
     const enrichOrSetPlayers = (sleeperPlayers: ActivePlayer[]) => {
       if (sleeperPlayers.length === 0) return;
       const sleeperByName = new Map<string, ActivePlayer>();
@@ -443,7 +463,7 @@ export const App: React.FC = () => {
         }
       }
     } catch {
-      // Keep existing player list if Sleeper player index is unreachable
+      // Keep existing player list
     }
   };
 
@@ -452,7 +472,6 @@ export const App: React.FC = () => {
     refreshKalshiBoardIfNeeded(false);
   }, [leagueId]);
 
-  // Whenever someone opens the Pick Modal to query odds, refresh if cached data is older than 5 mins
   useEffect(() => {
     if (isPickOpen) {
       refreshKalshiBoardIfNeeded(false);
@@ -497,17 +516,56 @@ export const App: React.FC = () => {
     setRecentLeagues(getRecentLeagues());
   };
 
-  // Restore authenticated session when leagueId changes
+  // Retrieve user's saved team on sign-in / league change
   useEffect(() => {
-    if (!leagueId) return;
-    const session = getSession(leagueId);
-    if (session) {
-      setCurrentRosterId(session.rosterId);
-    } else {
-      saveSession(1, DEFAULT_LOCAL_SESSION_TOKEN, leagueId);
+    if (!leagueId || !user) return;
+
+    let isMounted = true;
+
+    const resolveTeam = async () => {
+      // 1. Try get_my_team from server
+      try {
+        const getMyTeamFn = httpsCallable<
+          { league_id: string },
+          { roster_id: number | null; season: string | null } | null
+        >(functions, 'get_my_team');
+        const res = await getMyTeamFn({ league_id: leagueId });
+        if (isMounted && res.data && res.data.roster_id != null) {
+          setCurrentRosterId(Number(res.data.roster_id));
+          saveCachedTeamId(leagueId, Number(res.data.roster_id));
+          return;
+        }
+      } catch {
+        // Functions offline, continue
+      }
+
+      if (!isMounted) return;
+
+      // 2. Check cached team ID in localStorage
+      const cached = getCachedTeamId(leagueId);
+      if (cached != null) {
+        setCurrentRosterId(cached);
+        return;
+      }
+
+      // 3. Fallback: Check if any team in loaded list is claimed by user
+      const claimedTeam = teams.find(t => t.claimed_by && t.claimed_by.uid === user.uid);
+      if (claimedTeam) {
+        setCurrentRosterId(claimedTeam.roster_id);
+        saveCachedTeamId(leagueId, claimedTeam.roster_id);
+        return;
+      }
+
+      // 4. Default to first roster or prompt picker
       setCurrentRosterId(1);
-    }
-  }, [leagueId]);
+    };
+
+    resolveTeam();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [leagueId, user]);
 
   // Subscribe to Firestore under leagues/{leagueId} and sync real Sleeper data
   useEffect(() => {
@@ -567,7 +625,6 @@ export const App: React.FC = () => {
           matchups = [];
         }
 
-        // Build teams & lowest-scoring bettor locally right away
         const userMap = new Map<string, any>();
         for (const u of users) {
           if (u?.user_id) userMap.set(String(u.user_id), u);
@@ -655,15 +712,13 @@ export const App: React.FC = () => {
         });
         setIsLoadingLeague(false);
 
-        // Persist to Firestore via Cloud Function under leagues/{leagueId}/seasons/{season}
+        // Persist to Firestore via Cloud Function
         try {
-          const session = getSession(leagueId);
           const initFn = httpsCallable(functions, 'init_or_sync_league');
           await initFn({
             league_id: leagueId,
             season: resolvedSeason,
             force_sync: forceSync,
-            session_token: session?.sessionToken || DEFAULT_LOCAL_SESSION_TOKEN,
             sleeper_payload: {
               league_info: leagueInfo,
               season: resolvedSeason,
@@ -674,7 +729,7 @@ export const App: React.FC = () => {
             },
           });
         } catch {
-          // Functions emulator offline; browser-fetched Sleeper state remains active
+          // Functions emulator offline
         }
       } catch (err: any) {
         setLeagueError(err?.message || `Could not load Sleeper league ${leagueId}`);
@@ -745,14 +800,12 @@ export const App: React.FC = () => {
           if (isDemo && syncedLeagueRef.current !== `demo_${season}`) {
             syncedLeagueRef.current = `demo_${season}`;
             try {
-              const session = getSession('demo');
               const initFn = httpsCallable(functions, 'init_or_sync_league');
               await initFn({
                 league_id: 'demo',
                 season,
                 fallback_teams: MOCK_TEAMS,
                 fallback_parlays: [INITIAL_PARLAY, ...MOCK_PAST_PARLAYS],
-                session_token: session?.sessionToken || DEFAULT_LOCAL_SESSION_TOKEN,
               });
             } catch {
               // Ignore if emulator offline
@@ -812,8 +865,11 @@ export const App: React.FC = () => {
     (isLoadingLeague || !parlay.isRealDataLoaded);
 
   const currentTeam = teams.find(t => t.roster_id === currentRosterId) || teams[0];
+  const isClaimedByOther = Boolean(
+    currentTeam.claimed_by && user && currentTeam.claimed_by.uid !== user.uid
+  );
 
-  // Strictly submit pick only for the currently authenticated user's roster_id
+  // Submit pick for currently selected fantasy team
   const handlePickSubmit = async (pick: PickData) => {
     const newLeg: ParlayLeg = {
       id: `leg_${currentRosterId}_${Date.now()}`,
@@ -830,7 +886,19 @@ export const App: React.FC = () => {
       kickoff_time: pick.kickoff_time,
       game_id: pick.game_id,
       status: 'submitted',
+      last_edited_by: user
+        ? {
+            uid: user.uid,
+            name: user.displayName || 'Manager',
+            photo_url: user.photoURL || undefined,
+          }
+        : undefined,
+      last_edited_at: new Date().toISOString(),
+      edited_by_non_claimer: isClaimedByOther,
     };
+
+    // Save previous state for rollback on error
+    const previousParlay = parlay;
 
     // Optimistic UI update
     const updatedLegs: ParlayLeg[] = parlay.legs.map(leg =>
@@ -849,268 +917,268 @@ export const App: React.FC = () => {
       earliest_kickoff: stats.earliest_kickoff || prev.earliest_kickoff,
     }));
 
-    // Persist to Firestore via Cloud Function scoped by league_id and season
+    // Persist to Firestore via Cloud Function
     try {
-      const session = getSession(leagueId);
       const submitFn = httpsCallable(functions, 'submit_leg');
       await submitFn({
         league_id: leagueId,
         season,
-        session_token: session?.sessionToken || DEFAULT_LOCAL_SESSION_TOKEN,
         roster_id: currentRosterId,
         week: parlay.week,
         leg: newLeg,
       });
-    } catch {
-      // Keep optimistic state if running Vite without Functions emulator
+    } catch (err: any) {
+      if (leagueId.toLowerCase() !== 'demo') {
+        // Rollback optimistic update on server error
+        setParlay(previousParlay);
+        alert(err?.message || 'Failed to submit pick to server. Rolled back changes.');
+      }
     }
-  };
-
-  // Switch Team / PIN Login scoped by league_id and season
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (authPinInput.length !== 4) {
-      alert('Please enter a 4-digit PIN');
-      return;
-    }
-
-    try {
-      const verifyFn = httpsCallable<
-        { league_id: string; season: string; roster_id: number; pin: string },
-        { session_token: string; roster_id: number }
-      >(functions, 'verify_pin_login');
-      const res = await verifyFn({
-        league_id: leagueId,
-        season,
-        roster_id: authSelectedRoster,
-        pin: authPinInput,
-      });
-      saveSession(authSelectedRoster, res.data.session_token, leagueId);
-    } catch {
-      const token = DEFAULT_LOCAL_SESSION_TOKEN;
-      saveSession(authSelectedRoster, token, leagueId);
-    }
-
-    setCurrentRosterId(authSelectedRoster);
-    setIsAuthModalOpen(false);
-    setAuthPinInput('');
   };
 
   return (
-    <div className="min-h-screen bg-sleeper-dark text-white selection:bg-sleeper-accent selection:text-black">
-      {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-sleeper-card/90 backdrop-blur-md border-b border-sleeper-border px-3 sm:px-4 py-2.5 sm:py-3">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
-          {/* Brand Logo & Switch League Trigger */}
-          <div className="flex items-center space-x-2.5 min-w-0">
-            <button
-              type="button"
-              onClick={() => navigateToLeague(null)}
-              title="Return to League Selection Landing Page"
-              className="flex items-center space-x-2 text-left group min-w-0"
-            >
-              <span className="text-xl shrink-0">🏈</span>
-              <div className="min-w-0">
-                <h1 className="text-xs sm:text-sm font-black tracking-wider text-white leading-none truncate">
-                  Team Parlay Tracker
-                </h1>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigateToLeague(null)}
-              aria-label="Switch Sleeper League"
-              title={`Current League: ${leagueName} (${leagueId}) — Click to switch`}
-              className="h-9 px-2.5 rounded-xl bg-sleeper-dark border border-white/10 text-xs font-medium text-gray-300 hover:text-white hover:border-white/25 transition inline-flex items-center space-x-1.5 shrink-0 active:scale-95"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5 text-sleeper-accent shrink-0" />
-              <span className="hidden xs:inline">Switch League</span>
-            </button>
-          </div>
-
-          {/* Action Pills */}
-          <div className="flex items-center space-x-2 shrink-0">
-            <button
-              onClick={() => setIsArchiveOpen(true)}
-              aria-label="View Past Slips Archive"
-              className="h-9 min-w-[36px] px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 text-xs font-semibold text-gray-300 hover:text-white hover:border-white/25 transition inline-flex items-center justify-center space-x-1.5 active:scale-95 shadow-sm"
-              title="Past Slips Archive"
-            >
-              <History className="w-4 h-4 text-sleeper-accent shrink-0" />
-              <span className="hidden sm:inline">Archive</span>
-            </button>
-
-            {isRealLeagueLoading ? (
-              <div
-                data-testid="header-user-skeleton"
-                className="h-9 px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 animate-pulse flex items-center space-x-2 shrink-0"
-              >
-                <div className="w-5 h-5 rounded-full bg-white/10" />
-                <div className="w-16 sm:w-20 h-3 bg-white/10 rounded" />
-              </div>
-            ) : (
+    <SignInGate user={user} loading={authLoading} leagueName={leagueName}>
+      <div className="min-h-screen bg-sleeper-dark text-white selection:bg-sleeper-accent selection:text-black">
+        {/* Top Navigation Bar */}
+        <header className="sticky top-0 z-40 bg-sleeper-card/90 backdrop-blur-md border-b border-sleeper-border px-3 sm:px-4 py-2.5 sm:py-3">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
+            {/* Brand Logo & Switch League Trigger */}
+            <div className="flex items-center space-x-2.5 min-w-0">
               <button
-                onClick={() => {
-                  setAuthSelectedRoster(currentRosterId);
-                  setIsAuthModalOpen(true);
-                }}
-                aria-label={`Switch Team: currently authenticated as ${currentTeam.owner_name}`}
-                className="h-9 px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 hover:border-white/25 text-xs font-semibold text-white transition inline-flex items-center space-x-2 active:scale-95 shadow-sm"
-                title="Click to Switch Team / Re-Auth"
+                type="button"
+                onClick={() => navigateToLeague(null)}
+                title="Return to League Selection Landing Page"
+                className="flex items-center space-x-2 text-left group min-w-0 cursor-pointer"
               >
-                <div className="w-5 h-5 rounded-full bg-sleeper-accent/20 text-sleeper-accent text-[10px] font-black flex items-center justify-center shrink-0">
-                  {currentTeam.owner_name
-                    ? currentTeam.owner_name
-                        .trim()
-                        .split(/\s+/)
-                        .map((p) => p[0])
-                        .slice(0, 2)
-                        .join('')
-                        .toUpperCase()
-                    : 'U'}
+                <span className="text-xl shrink-0">🏈</span>
+                <div className="min-w-0">
+                  <h1 className="text-xs sm:text-sm font-black tracking-wider text-white leading-none truncate">
+                    Team Parlay Tracker
+                  </h1>
                 </div>
-                <span className="truncate max-w-[70px] xs:max-w-[100px] sm:max-w-[140px] md:max-w-none font-bold text-white">
-                  {currentTeam.owner_name}
-                </span>
-                <span className="hidden sm:inline text-sleeper-muted font-normal">
-                  ({currentTeam.team_name})
-                </span>
               </button>
-            )}
-          </div>
-        </div>
-      </header>
 
-      {/* Main Container (Single-Column Feed) */}
-      <main className="max-w-3xl mx-auto p-4 sm:p-6 lg:p-8 pb-20">
-        {leagueError && (
-          <div className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-xs sm:text-sm text-red-300 flex items-center justify-between">
-            <span>{leagueError}</span>
-            <button
-              type="button"
-              onClick={() => navigateToLeague(null)}
-              className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-white font-bold text-xs transition"
-            >
-              Change League ID
-            </button>
-          </div>
-        )}
-        {isRealLeagueLoading ? (
-          <LeagueSkeleton />
-        ) : (
-          <>
-            {isLoadingLeague && (
-              <div className="mb-4 p-3 rounded-xl bg-sleeper-card border border-sleeper-border text-xs text-gray-300 flex items-center space-x-2">
-                <span className="animate-spin">⏳</span>
-                <span>Syncing Sleeper league {leagueId}...</span>
-              </div>
-            )}
-            {/* Weekly Bettor Spotlight */}
-            <BettorBanner parlay={parlay} />
-
-            {/* Unified Single-Column Parlay Slip */}
-            <ParlayCard
-              parlay={parlay}
-              currentRosterId={currentRosterId}
-              onOpenPickModal={(leg) => {
-                if (leg.roster_id === currentRosterId) {
-                  setIsPickOpen(true);
-                }
-              }}
-              oddsFormat={oddsFormat}
-              onToggleOddsFormat={handleToggleOddsFormat}
-            />
-          </>
-        )}
-      </main>
-
-      {/* Interactive Modals */}
-      <PickModal
-        isOpen={isPickOpen}
-        onClose={() => setIsPickOpen(false)}
-        onSubmitPick={handlePickSubmit}
-        rosterName={currentTeam.team_name}
-        activePlayers={activePlayers}
-        kalshiGames={kalshiGames}
-        kalshiProps={kalshiProps}
-        liveMarketCount={liveMarketCount}
-        lastUpdated={lastUpdated}
-        oddsFormat={oddsFormat}
-        onToggleOddsFormat={handleToggleOddsFormat}
-        currentLeg={parlay.legs.find(l => l.roster_id === currentRosterId)}
-      />
-
-      <PastSlipsArchive
-        isOpen={isArchiveOpen}
-        onClose={() => setIsArchiveOpen(false)}
-        pastParlays={pastParlays}
-      />
-
-      {/* Team / PIN Authentication Switcher Modal */}
-      {isAuthModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
-            <div className="flex justify-between items-center px-5 py-4 border-b border-sleeper-border">
-              <div className="flex items-center space-x-2">
-                <KeyRound className="w-5 h-5 text-sleeper-accent" />
-                <h3 className="text-sm font-bold text-white">Select Team & Enter PIN</h3>
-              </div>
               <button
-                onClick={() => setIsAuthModalOpen(false)}
-                className="p-1 rounded-lg text-gray-400 hover:text-white"
+                type="button"
+                onClick={() => navigateToLeague(null)}
+                aria-label="Switch Sleeper League"
+                title={`Current League: ${leagueName} (${leagueId}) — Click to switch`}
+                className="h-9 px-2.5 rounded-xl bg-sleeper-dark border border-white/10 text-xs font-medium text-gray-300 hover:text-white hover:border-white/25 transition inline-flex items-center space-x-1.5 shrink-0 active:scale-95 cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <ArrowLeftRight className="w-3.5 h-3.5 text-sleeper-accent shrink-0" />
+                <span className="hidden xs:inline">Switch League</span>
               </button>
             </div>
 
-            <form onSubmit={handleLoginSubmit} className="p-5 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1">
-                  Your Fantasy Team
-                </label>
-                <select
-                  value={authSelectedRoster}
-                  onChange={(e) => setAuthSelectedRoster(parseInt(e.target.value, 10))}
-                  className="w-full bg-sleeper-dark border border-sleeper-border rounded-lg p-2.5 text-xs text-white"
-                >
-                  {teams.map(t => (
-                    <option key={t.roster_id} value={t.roster_id}>
-                      {t.team_name} ({t.owner_name}){' '}
-                      {t.roster_id === parlay.bettor.roster_id ? '👑 Bettor' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1">
-                  4-Digit Security PIN
-                </label>
-                <input
-                  type="password"
-                  maxLength={4}
-                  required
-                  placeholder="••••"
-                  value={authPinInput}
-                  onChange={(e) => setAuthPinInput(e.target.value.replace(/\D/g, ''))}
-                  className="w-full bg-sleeper-dark border border-sleeper-border rounded-lg p-2.5 text-center text-lg tracking-widest font-mono text-white focus:border-sleeper-accent focus:outline-none"
-                />
-                <span className="block text-[10px] text-sleeper-muted mt-1 text-center">
-                  (Default local emulator PIN: <strong>1234</strong>)
-                </span>
-              </div>
-
+            {/* Action Pills */}
+            <div className="flex items-center space-x-2 shrink-0">
               <button
-                type="submit"
-                className="w-full py-2.5 bg-sleeper-accent text-black font-extrabold rounded-xl text-xs hover:brightness-110 transition"
+                type="button"
+                onClick={() => setIsArchiveOpen(true)}
+                aria-label="View Past Slips Archive"
+                className="h-9 min-w-[36px] px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 text-xs font-semibold text-gray-300 hover:text-white hover:border-white/25 transition inline-flex items-center justify-center space-x-1.5 active:scale-95 shadow-sm cursor-pointer"
+                title="Past Slips Archive"
               >
-                Authenticate & Set Session
+                <History className="w-4 h-4 text-sleeper-accent shrink-0" />
+                <span className="hidden sm:inline">Archive</span>
               </button>
-            </form>
+
+              {/* Team Picker Badge with ⚠️ if claimed by another user */}
+              {isRealLeagueLoading ? (
+                <div
+                  data-testid="header-user-skeleton"
+                  className="h-9 px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 animate-pulse flex items-center space-x-2 shrink-0"
+                >
+                  <div className="w-5 h-5 rounded-full bg-white/10" />
+                  <div className="w-16 sm:w-20 h-3 bg-white/10 rounded" />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsTeamPickerOpen(true)}
+                  aria-label={`Switch Team: currently viewing ${currentTeam.owner_name}`}
+                  className={`h-9 px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border transition inline-flex items-center space-x-2 active:scale-95 shadow-sm cursor-pointer ${
+                    isClaimedByOther
+                      ? 'border-amber-500/50 hover:border-amber-400 bg-amber-500/10'
+                      : 'border-white/10 hover:border-white/25 text-white'
+                  }`}
+                  title={
+                    isClaimedByOther
+                      ? `Claimed by ${currentTeam.claimed_by?.name || 'another manager'} (Click to switch team)`
+                      : 'Click to Switch or Claim Team'
+                  }
+                >
+                  <div className="w-5 h-5 rounded-full bg-sleeper-accent/20 text-sleeper-accent text-[10px] font-black flex items-center justify-center shrink-0">
+                    {currentTeam.owner_name
+                      ? currentTeam.owner_name
+                          .trim()
+                          .split(/\s+/)
+                          .map((p) => p[0])
+                          .slice(0, 2)
+                          .join('')
+                          .toUpperCase()
+                      : 'U'}
+                  </div>
+                  <span className="truncate max-w-[70px] xs:max-w-[100px] sm:max-w-[130px] md:max-w-none font-bold text-white">
+                    {currentTeam.owner_name}
+                  </span>
+                  {isClaimedByOther && (
+                    <span className="text-xs text-amber-400 font-bold" title="Claimed by another account">
+                      ⚠️
+                    </span>
+                  )}
+                  <span className="hidden sm:inline text-sleeper-muted font-normal">
+                    ({currentTeam.team_name})
+                  </span>
+                </button>
+              )}
+
+              {/* Profile Menu with Google Avatar & Sign Out */}
+              {user && (
+                <div className="relative" ref={profileMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileMenuOpen(prev => !prev)}
+                    className="h-9 w-9 rounded-xl bg-sleeper-dark border border-white/10 hover:border-white/25 flex items-center justify-center overflow-hidden transition active:scale-95 shadow-sm cursor-pointer"
+                    title={`${user.displayName || user.email} (Click for profile & sign out)`}
+                  >
+                    {user.photoURL ? (
+                      <img
+                        src={user.photoURL}
+                        alt={user.displayName || 'User Avatar'}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-sleeper-accent/20 text-sleeper-accent font-bold text-xs flex items-center justify-center">
+                        {(user.displayName || user.email || 'U')[0].toUpperCase()}
+                      </div>
+                    )}
+                  </button>
+
+                  {isProfileMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-sleeper-card border border-sleeper-border shadow-2xl p-3 z-50 animate-fadeIn text-left">
+                      <div className="px-2 py-1.5 border-b border-sleeper-border/60 mb-2">
+                        <p className="text-xs font-bold text-white truncate">
+                          {user.displayName || 'Google User'}
+                        </p>
+                        <p className="text-[11px] text-sleeper-muted truncate">
+                          {user.email}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          setIsTeamPickerOpen(true);
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:text-white hover:bg-white/5 transition flex items-center space-x-2 cursor-pointer"
+                      >
+                        <UserCheck className="w-3.5 h-3.5 text-sleeper-accent" />
+                        <span>Change Fantasy Team</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setIsProfileMenuOpen(false);
+                          await signOutUser();
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition flex items-center space-x-2 mt-1 cursor-pointer"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        </header>
+
+        {/* Main Container */}
+        <main className="max-w-3xl mx-auto p-4 sm:p-6 lg:p-8 pb-20">
+          {leagueError && (
+            <div className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-xs sm:text-sm text-red-300 flex items-center justify-between">
+              <span>{leagueError}</span>
+              <button
+                type="button"
+                onClick={() => navigateToLeague(null)}
+                className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-white font-bold text-xs transition cursor-pointer"
+              >
+                Change League ID
+              </button>
+            </div>
+          )}
+          {isRealLeagueLoading ? (
+            <LeagueSkeleton />
+          ) : (
+            <>
+              {isLoadingLeague && (
+                <div className="mb-4 p-3 rounded-xl bg-sleeper-card border border-sleeper-border text-xs text-gray-300 flex items-center space-x-2">
+                  <span className="animate-spin">⏳</span>
+                  <span>Syncing Sleeper league {leagueId}...</span>
+                </div>
+              )}
+
+              {/* Weekly Bettor Spotlight */}
+              <BettorBanner parlay={parlay} />
+
+              {/* Unified Single-Column Parlay Slip */}
+              <ParlayCard
+                parlay={parlay}
+                currentRosterId={currentRosterId}
+                onOpenPickModal={(leg) => {
+                  if (leg.roster_id === currentRosterId) {
+                    setIsPickOpen(true);
+                  }
+                }}
+                oddsFormat={oddsFormat}
+                onToggleOddsFormat={handleToggleOddsFormat}
+              />
+            </>
+          )}
+        </main>
+
+        {/* Interactive Modals */}
+        <PickModal
+          isOpen={isPickOpen}
+          onClose={() => setIsPickOpen(false)}
+          onSubmitPick={handlePickSubmit}
+          rosterName={currentTeam.team_name}
+          activePlayers={activePlayers}
+          kalshiGames={kalshiGames}
+          kalshiProps={kalshiProps}
+          liveMarketCount={liveMarketCount}
+          lastUpdated={lastUpdated}
+          oddsFormat={oddsFormat}
+          onToggleOddsFormat={handleToggleOddsFormat}
+          currentLeg={parlay.legs.find(l => l.roster_id === currentRosterId)}
+        />
+
+        <PastSlipsArchive
+          isOpen={isArchiveOpen}
+          onClose={() => setIsArchiveOpen(false)}
+          pastParlays={pastParlays}
+        />
+
+        {/* Team Picker Modal */}
+        <TeamPickerModal
+          isOpen={isTeamPickerOpen}
+          onClose={() => setIsTeamPickerOpen(false)}
+          teams={teams}
+          currentRosterId={currentRosterId}
+          currentUserId={user?.uid}
+          leagueId={leagueId}
+          season={season}
+          onTeamSelected={(rosterId) => {
+            setCurrentRosterId(rosterId);
+            saveCachedTeamId(leagueId, rosterId);
+          }}
+        />
+      </div>
+    </SignInGate>
   );
 };

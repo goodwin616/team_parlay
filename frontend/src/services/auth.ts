@@ -1,18 +1,20 @@
+import { useState, useEffect } from 'react';
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  User,
+  UserCredential,
+} from 'firebase/auth';
+import { auth } from './firebase';
+
 /**
- * Client authentication, multi-league URL parsing, and session token management.
- * RAW PINS AND HASHES NEVER TOUCH CLIENT PERSISTENCE.
- * Only the server-issued random sessionToken and rosterId are persisted in localStorage.
+ * Client authentication, Google Sign-In, multi-league URL parsing, and team cache.
  */
 
-const SESSION_TOKEN_KEY = 'tp_session_token';
-const ROSTER_ID_KEY = 'tp_roster_id';
 const RECENT_LEAGUES_KEY = 'tp_recent_leagues';
-
-export interface AuthSession {
-  rosterId: number;
-  sessionToken: string;
-  leagueId?: string;
-}
+const TEAM_CACHE_PREFIX = 'tp_team_cache_';
 
 export interface RecentLeague {
   leagueId: string;
@@ -20,65 +22,64 @@ export interface RecentLeague {
   lastVisited: string;
 }
 
-function getLeagueStorageKeys(leagueId?: string) {
-  if (!leagueId) {
-    return { tokenKey: SESSION_TOKEN_KEY, rosterKey: ROSTER_ID_KEY };
+/**
+ * Trigger Google Sign-In via popup.
+ */
+export async function signInWithGoogle(): Promise<UserCredential> {
+  const provider = new GoogleAuthProvider();
+  return signInWithPopup(auth, provider);
+}
+
+/**
+ * Sign out the currently authenticated user.
+ */
+export async function signOutUser(): Promise<void> {
+  return signOut(auth);
+}
+
+/**
+ * React hook to observe Firebase Auth state.
+ */
+export function useAuthUser(): { user: User | null; loading: boolean } {
+  const [user, setUser] = useState<User | null>(() => auth.currentUser);
+  const [loading, setLoading] = useState<boolean>(() => !auth.currentUser);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  return { user, loading };
+}
+
+/**
+ * Persists the user's selected team ID in localStorage for a specific league.
+ */
+export function saveCachedTeamId(leagueId: string, rosterId: number): void {
+  if (!leagueId) return;
+  try {
+    localStorage.setItem(`${TEAM_CACHE_PREFIX}${leagueId}`, String(rosterId));
+  } catch {
+    // Ignore storage quota errors
   }
-  return {
-    tokenKey: `${SESSION_TOKEN_KEY}_${leagueId}`,
-    rosterKey: `${ROSTER_ID_KEY}_${leagueId}`,
-  };
 }
 
 /**
- * Persists the server-issued session token and roster ID (scoped by leagueId if provided).
+ * Retrieves cached selected team ID from localStorage for a specific league.
  */
-export function saveSession(rosterId: number, sessionToken: string, leagueId?: string): void {
-  const { tokenKey, rosterKey } = getLeagueStorageKeys(leagueId);
-  localStorage.setItem(rosterKey, rosterId.toString());
-  localStorage.setItem(tokenKey, sessionToken);
-}
-
-/**
- * Retrieves the currently active session from localStorage, or null if unauthenticated.
- */
-export function getSession(leagueId?: string): AuthSession | null {
-  const { tokenKey, rosterKey } = getLeagueStorageKeys(leagueId);
-  const rosterStr = localStorage.getItem(rosterKey);
-  const token = localStorage.getItem(tokenKey);
-  if (!rosterStr || !token) {
+export function getCachedTeamId(leagueId: string): number | null {
+  if (!leagueId) return null;
+  try {
+    const val = localStorage.getItem(`${TEAM_CACHE_PREFIX}${leagueId}`);
+    if (!val) return null;
+    const parsed = parseInt(val, 10);
+    return isNaN(parsed) ? null : parsed;
+  } catch {
     return null;
   }
-  const rosterId = parseInt(rosterStr, 10);
-  if (isNaN(rosterId)) {
-    clearSession(leagueId);
-    return null;
-  }
-  return { rosterId, sessionToken: token, leagueId };
-}
-
-/**
- * Clears active session credentials upon logout or invalidation.
- */
-export function clearSession(leagueId?: string): void {
-  const { tokenKey, rosterKey } = getLeagueStorageKeys(leagueId);
-  localStorage.removeItem(rosterKey);
-  localStorage.removeItem(tokenKey);
-}
-
-/**
- * Checks whether an active session exists.
- */
-export function isAuthenticated(leagueId?: string): boolean {
-  return getSession(leagueId) !== null;
-}
-
-/**
- * Returns current authenticated roster ID if logged in, else null.
- */
-export function getCurrentRosterId(leagueId?: string): number | null {
-  const session = getSession(leagueId);
-  return session ? session.rosterId : null;
 }
 
 /**

@@ -15,8 +15,12 @@ export interface TeamProfile {
   owner_name: string;        // Sleeper display name
   team_name: string;         // Fantasy team name
   avatar_url?: string;       // Avatar image URL
-  pin_hash?: string;         // SHA-256(raw_pin + secret_server_salt) - server-side
-  session_tokens?: string[];  // Active valid session tokens - server-side
+  claimed_by?: {
+    uid: string;
+    name: string;
+    photo_url?: string;
+    claimed_at: string;
+  };
 }
 
 export interface ParlayLeg {
@@ -34,6 +38,13 @@ export interface ParlayLeg {
   kalshi_side?: 'yes' | 'no';
   status: 'pending' | 'submitted';
   kickoff_time?: string;                  // ISO 8601 string
+  last_edited_by?: {
+    uid: string;
+    name: string;
+    photo_url?: string;
+  };
+  last_edited_at?: string;
+  edited_by_non_claimer?: boolean;
 }
 
 export interface WeeklyParlay {
