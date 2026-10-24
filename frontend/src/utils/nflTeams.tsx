@@ -95,12 +95,16 @@ export const TeamLogo: React.FC<TeamLogoProps> = ({
   }
 
   return (
-    <img
-      src={meta.logoUrl}
-      alt={meta.abbr}
-      onError={() => setImgError(true)}
-      className={`${dims} object-contain shrink-0 drop-shadow-sm ${className}`}
-      loading="lazy"
-    />
+    <div
+      className={`${dims} rounded-full bg-slate-100/95 p-0.5 border border-white/30 flex items-center justify-center shrink-0 shadow-sm overflow-hidden ${className}`}
+    >
+      <img
+        src={meta.logoUrl}
+        alt={meta.abbr}
+        onError={() => setImgError(true)}
+        className="w-full h-full object-contain"
+        loading="lazy"
+      />
+    </div>
   );
 };

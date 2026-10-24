@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, AlertTriangle, CheckCircle2, CircleDashed, Edit3, ExternalLink, Info, PlusCircle } from 'lucide-react';
+import {
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
+  CircleDashed,
+  Edit3,
+  ExternalLink,
+  Info,
+  PlusCircle,
+  Bell,
+  BellRing,
+} from 'lucide-react';
 import { WeeklyParlay, ParlayLeg } from '../types';
 import { formatOddsWithCents, formatComboOdds, OddsFormat } from '../utils/parlayMath';
 import { TeamLogo } from '../utils/nflTeams';
@@ -22,6 +33,22 @@ export const ParlayCard: React.FC<Props> = ({
 }) => {
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [showEstimateInfo, setShowEstimateInfo] = useState<boolean>(false);
+  const [nudgedLegs, setNudgedLegs] = useState<Record<string | number, boolean>>({});
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => {
+      setToastMessage(null);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
+  const handleNudge = (leg: ParlayLeg) => {
+    const key = leg.id || leg.roster_id;
+    setNudgedLegs(prev => ({ ...prev, [key]: true }));
+    setToastMessage(`Nudge sent! Reminded ${leg.owner_name}`);
+  };
 
   // Live countdown to earliest kickoff
   useEffect(() => {
@@ -90,14 +117,15 @@ export const ParlayCard: React.FC<Props> = ({
     <div className="rounded-2xl bg-sleeper-card border border-sleeper-border shadow-xl overflow-hidden mb-6">
       {/* Card Header: Week, Kalshi Combo Odds, Payout, Status */}
       <div className="p-4 border-b border-sleeper-border bg-gradient-to-b from-[#222E40] to-sleeper-card">
+        {/* Top Header Row: H2 Week Heading + Inline Estimate Badge on Left, Odds Format Toggle on Right */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-black tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-sleeper-accent/15 text-sleeper-accent border border-sleeper-accent/30">
+          <div className="flex items-center space-x-2.5">
+            <h2 className="text-lg sm:text-xl font-black text-white tracking-tight uppercase leading-none">
               Week {parlay.week} Parlay
-            </span>
+            </h2>
             {isOfficialQuote ? (
               <span
-                className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300"
                 title="Verified quote from placed combo ticket"
               >
                 Official Quote
@@ -107,10 +135,10 @@ export const ParlayCard: React.FC<Props> = ({
                 type="button"
                 onClick={() => setShowEstimateInfo(prev => !prev)}
                 aria-expanded={showEstimateInfo}
-                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border inline-flex items-center space-x-1 transition cursor-pointer ${
+                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full inline-flex items-center space-x-1 transition cursor-pointer ${
                   showEstimateInfo
-                    ? 'bg-amber-500/30 text-amber-200 border-amber-400/60'
-                    : 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                    ? 'bg-amber-500/25 text-amber-200'
+                    : 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
                 }`}
                 title="Click to see how this estimate is calculated"
               >
@@ -123,7 +151,7 @@ export const ParlayCard: React.FC<Props> = ({
           <div className="flex items-center space-x-2.5">
             {onToggleOddsFormat && (
               <div
-                className="inline-flex rounded-lg bg-sleeper-dark p-0.5 border border-sleeper-border text-[10px] font-bold"
+                className="inline-flex rounded-lg bg-sleeper-dark p-0.5 border border-sleeper-border/60 text-[10px] font-bold shrink-0"
                 title="Switch between American Odds (-110) and Percentage Odds (52%)"
               >
                 <button
@@ -150,15 +178,39 @@ export const ParlayCard: React.FC<Props> = ({
                 </button>
               </div>
             )}
-
-            <div className="text-xs text-sleeper-muted font-mono font-medium">
-              {submittedCount} / {parlay.legs.length} picks in
-            </div>
           </div>
         </div>
 
-        {/* Unified 4-Metric Stats Bar */}
-        <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 rounded-xl bg-sleeper-dark/90 border border-sleeper-border text-center">
+        {/* Sleek Horizontal Progress Bar spanning card width for submitted picks */}
+        <div className="mt-3.5">
+          <div className="flex items-center justify-between text-xs mb-1.5">
+            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+              Picks Submitted
+            </span>
+            <span className="text-xs text-sleeper-muted font-mono font-bold">
+              {submittedCount} / {parlay.legs.length} picks in
+            </span>
+          </div>
+          <div className="w-full bg-sleeper-dark/90 rounded-full h-2 overflow-hidden border border-white/5">
+            <div
+              className="bg-gradient-to-r from-sleeper-accent to-emerald-400 h-full rounded-full transition-all duration-500 ease-out"
+              style={{
+                width: `${Math.min(
+                  100,
+                  Math.round((submittedCount / (parlay.legs.length || 1)) * 100)
+                )}%`,
+              }}
+              role="progressbar"
+              aria-valuenow={submittedCount}
+              aria-valuemin={0}
+              aria-valuemax={parlay.legs.length}
+              aria-label={`${submittedCount} / ${parlay.legs.length} picks in`}
+            />
+          </div>
+        </div>
+
+        {/* Unified 4-Metric Stats Bar with clarified payout math */}
+        <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 rounded-xl bg-sleeper-dark/90 border border-sleeper-border/60 text-center">
           <div className="border-r border-sleeper-border/70 pr-2">
             <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
               {isOfficialQuote ? 'Combo Odds' : 'Est. Combo Odds'}
@@ -197,6 +249,9 @@ export const ParlayCard: React.FC<Props> = ({
             </span>
             <span className="text-sm sm:text-base font-black font-mono text-emerald-400">
               ${payoutPerPlayer.toFixed(2)}
+            </span>
+            <span className="text-[10px] text-sleeper-muted font-mono block mt-0.5">
+              ÷ {submittedCount || parlay.legs.length} active
             </span>
           </div>
         </div>
@@ -282,17 +337,17 @@ export const ParlayCard: React.FC<Props> = ({
                   )}
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                  <div className="flex items-center space-x-1.5 flex-wrap gap-y-0.5">
                     <span className="text-xs font-bold text-white truncate">
-                      {leg.owner_name}
+                      {leg.team_name}
                     </span>
-                    <span className="text-[10px] text-sleeper-muted truncate">
-                      ({leg.team_name})
+                    <span className="text-[11px] text-sleeper-muted truncate">
+                      ({leg.owner_name})
                     </span>
 
                     {isCurrentUserLeg && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-sleeper-accent/15 border border-sleeper-accent/30 text-sleeper-accent text-[10px] font-bold uppercase tracking-wider">
-                        Your Weekly Pick
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-sleeper-accent/15 text-sleeper-accent text-[10px] font-bold">
+                        (You)
                       </span>
                     )}
                   </div>
@@ -308,7 +363,7 @@ export const ParlayCard: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Right Column: Odds Badge + Submit/Edit CTA for Current User */}
+              {/* Right Column: Odds Badge + Submit/Edit CTA for Current User or Nudge for Pending */}
               <div className="shrink-0 flex items-center justify-end space-x-2 pl-3">
                 {isSubmitted ? (
                   <>
@@ -328,18 +383,58 @@ export const ParlayCard: React.FC<Props> = ({
                     <span>Submit Pick</span>
                   </span>
                 ) : (
-                  <span
-                    title="Waiting for member to submit their weekly pick"
-                    className="font-mono text-xs font-semibold w-16 text-center py-1 rounded bg-sleeper-dark border border-dashed border-gray-600 text-gray-400"
-                  >
-                    Pending
-                  </span>
+                  <div className="flex items-center space-x-1.5">
+                    <span
+                      title="Waiting for member to submit their weekly pick"
+                      className="font-mono text-xs font-semibold px-2 py-1 rounded bg-white/5 text-gray-400"
+                    >
+                      Pending
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNudge(leg);
+                      }}
+                      aria-label={`Nudge ${leg.owner_name} to submit pick`}
+                      title={`Send a reminder nudge to ${leg.owner_name}`}
+                      className={`px-2 py-1 rounded-lg border text-xs font-bold inline-flex items-center space-x-1 transition active:scale-95 ${
+                        nudgedLegs[leg.id || leg.roster_id]
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : 'bg-sleeper-dark hover:bg-sleeper-border/50 text-gray-300 hover:text-white border-sleeper-border/70'
+                      }`}
+                    >
+                      {nudgedLegs[leg.id || leg.roster_id] ? (
+                        <>
+                          <BellRing className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
+                          <span>Nudged!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Bell className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Nudge</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-sleeper-card border border-amber-500/40 text-amber-300 px-4 py-2.5 rounded-xl shadow-2xl flex items-center space-x-2 text-xs font-bold animate-fadeIn"
+        >
+          <BellRing className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Sleeper Chat Share Footer */}
       <SleeperChatExport parlay={parlay} />
