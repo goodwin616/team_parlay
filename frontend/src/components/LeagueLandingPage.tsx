@@ -37,7 +37,7 @@ export const LeagueLandingPage: React.FC<Props> = ({
             Team Parlay Tracker
           </h1>
           <p className="text-xs sm:text-sm text-gray-400 max-w-sm mx-auto leading-relaxed">
-            Weekly lowest-scorer $5 Kalshi combo tracker for your Sleeper fantasy football league.
+            Lowest scorer places the bet. Everyone builds the slip. Track your league’s weekly parlay.
           </p>
         </div>
 
