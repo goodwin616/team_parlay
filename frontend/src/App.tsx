@@ -280,6 +280,7 @@ export const App: React.FC = () => {
   const [kalshiGames, setKalshiGames] = useState<GameLineOption[]>([]);
   const [kalshiProps, setKalshiProps] = useState<any[]>([]);
   const [liveMarketCount, setLiveMarketCount] = useState<number>(0);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const lastKalshiFetchRef = useRef<number>(0);
 
   // Load live Kalshi NFL markets & Sleeper active NFL players (cached for 5 mins, refreshes on query when >5 mins old)
@@ -318,9 +319,11 @@ export const App: React.FC = () => {
         loadedLiveKalshi = true;
         setActivePlayers(board.players);
       }
-      if (loadedLiveKalshi) {
+      if (loadedLiveKalshi || (board.live_market_count && board.live_market_count > 0)) {
         const serverTs = board.updated_at ? Date.parse(board.updated_at) : NaN;
-        lastKalshiFetchRef.current = !Number.isNaN(serverTs) ? serverTs : Date.now();
+        const ts = !Number.isNaN(serverTs) ? serverTs : Date.now();
+        lastKalshiFetchRef.current = ts;
+        setLastUpdated(new Date(ts));
       }
     };
 
@@ -966,6 +969,7 @@ export const App: React.FC = () => {
         kalshiGames={kalshiGames}
         kalshiProps={kalshiProps}
         liveMarketCount={liveMarketCount}
+        lastUpdated={lastUpdated}
         oddsFormat={oddsFormat}
         onToggleOddsFormat={handleToggleOddsFormat}
         currentLeg={parlay.legs.find(l => l.roster_id === currentRosterId)}

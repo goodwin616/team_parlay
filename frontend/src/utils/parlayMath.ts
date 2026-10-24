@@ -72,6 +72,45 @@ export function formatComboOdds(
   return oddsAmerican;
 }
 
+/**
+ * Formats a timestamp into a user-friendly data freshness string.
+ * Examples:
+ * - < 30 seconds: "Updated just now"
+ * - < 60 seconds: "Updated 45s ago"
+ * - < 60 minutes: "Updated 5m ago"
+ * - < 24 hours: "Updated 2h ago"
+ * - >= 24 hours: "Updated [time]" (e.g., "Updated 2:30 PM")
+ */
+export function formatDataFreshness(
+  timestamp?: Date | number | string | null,
+  nowMs: number = Date.now()
+): string {
+  if (!timestamp) return 'Off-Season / Sample Board';
+
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  const timeMs = date.getTime();
+  if (Number.isNaN(timeMs)) return 'Off-Season / Sample Board';
+
+  const diffSec = Math.max(0, Math.floor((nowMs - timeMs) / 1000));
+
+  if (diffSec < 30) {
+    return 'Updated just now';
+  }
+  if (diffSec < 60) {
+    return `Updated ${diffSec}s ago`;
+  }
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) {
+    return `Updated ${diffMin}m ago`;
+  }
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) {
+    return `Updated ${diffHours}h ago`;
+  }
+
+  return `Updated ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+}
+
 export function checkSgpCorrelation(legs: ParlayLeg[]): boolean {
   const submitted = legs.filter(l => l.status === 'submitted');
   const gameIds = submitted

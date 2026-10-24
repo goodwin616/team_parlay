@@ -19,6 +19,7 @@ import {
   kalshiCentsToDecimal,
   kalshiCentsToAmerican,
   formatOddsWithCents,
+  formatDataFreshness,
   OddsFormat,
 } from "../utils/parlayMath";
 
@@ -43,6 +44,7 @@ interface Props {
   kalshiGames?: GameLineOption[];
   kalshiProps?: any[];
   liveMarketCount?: number;
+  lastUpdated?: Date | number | string | null;
   oddsFormat?: OddsFormat;
   onToggleOddsFormat?: (format: OddsFormat) => void;
   currentLeg?: ParlayLeg;
@@ -300,11 +302,24 @@ export const PickModal: React.FC<Props> = ({
   kalshiGames = [],
   kalshiProps = [],
   liveMarketCount = 0,
+  lastUpdated,
   oddsFormat = "american",
   onToggleOddsFormat,
   currentLeg,
 }) => {
   const gamesList = kalshiGames.length > 0 ? kalshiGames : SAMPLE_KALSHI_GAMES;
+
+  // Track current timestamp for dynamic relative freshness updates while modal is open
+  const [freshnessNow, setFreshnessNow] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (!isOpen || !lastUpdated) return;
+    setFreshnessNow(Date.now());
+    const interval = setInterval(() => {
+      setFreshnessNow(Date.now());
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [isOpen, lastUpdated]);
 
   // Only Kalshi API-backed tabs: Player Prop and Game Line (no manual Custom tab)
   const [tab, setTab] = useState<"prop" | "mainline">("prop");
@@ -797,6 +812,11 @@ export const PickModal: React.FC<Props> = ({
     onClose();
   };
 
+  const isLive = Boolean(lastUpdated || liveMarketCount > 0);
+  const freshnessText = isLive
+    ? formatDataFreshness(lastUpdated ?? Date.now(), freshnessNow)
+    : "Off-Season / Sample Board";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm overflow-y-auto animate-fadeIn">
       <div className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-lg sm:max-w-xl lg:max-w-2xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl my-auto">
@@ -806,15 +826,21 @@ export const PickModal: React.FC<Props> = ({
             <div className="text-[11px] font-bold text-sleeper-accent uppercase tracking-wider flex items-center space-x-2">
               <span>{rosterName} • Kalshi NFL Markets</span>
               <span
-                className={`text-[9px] px-1.5 py-0.5 rounded border ${
-                  liveMarketCount > 0
+                className={`text-[9px] px-1.5 py-0.5 rounded border inline-flex items-center space-x-1 ${
+                  isLive
                     ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
                     : "bg-amber-500/15 text-amber-300 border-amber-500/30"
                 }`}
+                title={
+                  lastUpdated
+                    ? `Markets refreshed at ${new Date(lastUpdated).toLocaleTimeString()}`
+                    : undefined
+                }
               >
-                {liveMarketCount > 0
-                  ? `● Live (${liveMarketCount} open)`
-                  : "Off-Season / Sample Board"}
+                {isLive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-0.5 inline-block" />
+                )}
+                <span>{freshnessText}</span>
               </span>
             </div>
             <h3 className="text-base font-bold text-white flex items-center space-x-1.5">

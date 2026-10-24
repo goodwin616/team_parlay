@@ -7,6 +7,7 @@ import {
   kalshiCentsToAmerican,
   formatOddsWithCents,
   formatComboOdds,
+  formatDataFreshness,
   checkSgpCorrelation,
   calculateEarliestKickoff,
   calculateParlayStats,
@@ -42,6 +43,39 @@ describe('Kalshi & Parlay Math Logic', () => {
     expect(formatOddsWithCents('-117', 54, 'percentage')).toBe('54%');
     expect(formatComboOdds('+660', 7.6, 13, 'american')).toBe('+660');
     expect(formatComboOdds('+660', 7.6, 13, 'percentage')).toBe('13%');
+  });
+
+  it('formats data freshness indicator accurately across time intervals', () => {
+    const baseNow = 1727700000000; // Fixed reference point in time
+
+    // Null or undefined
+    expect(formatDataFreshness(null, baseNow)).toBe('Off-Season / Sample Board');
+    expect(formatDataFreshness(undefined, baseNow)).toBe('Off-Season / Sample Board');
+    expect(formatDataFreshness('invalid-date', baseNow)).toBe('Off-Season / Sample Board');
+
+    // Just now (< 30s)
+    expect(formatDataFreshness(new Date(baseNow - 5000), baseNow)).toBe('Updated just now');
+    expect(formatDataFreshness(baseNow - 29000, baseNow)).toBe('Updated just now');
+
+    // 30s to 59s
+    expect(formatDataFreshness(baseNow - 30000, baseNow)).toBe('Updated 30s ago');
+    expect(formatDataFreshness(baseNow - 45000, baseNow)).toBe('Updated 45s ago');
+    expect(formatDataFreshness(baseNow - 59000, baseNow)).toBe('Updated 59s ago');
+
+    // 1m to 59m
+    expect(formatDataFreshness(baseNow - 60000, baseNow)).toBe('Updated 1m ago');
+    expect(formatDataFreshness(baseNow - 150000, baseNow)).toBe('Updated 2m ago');
+    expect(formatDataFreshness(baseNow - 3540000, baseNow)).toBe('Updated 59m ago');
+
+    // 1h to 23h
+    expect(formatDataFreshness(baseNow - 3600000, baseNow)).toBe('Updated 1h ago');
+    expect(formatDataFreshness(baseNow - 7200000, baseNow)).toBe('Updated 2h ago');
+    expect(formatDataFreshness(baseNow - 82800000, baseNow)).toBe('Updated 23h ago');
+
+    // >= 24h
+    const oldDate = new Date(baseNow - 90000000);
+    const expectedTime = oldDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    expect(formatDataFreshness(oldDate, baseNow)).toBe(`Updated ${expectedTime}`);
   });
 
   it('calculates parlay compound multiplier and $5 payout using only submitted legs', () => {
