@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   X,
   Sparkles,
@@ -48,6 +48,7 @@ interface Props {
   oddsFormat?: OddsFormat;
   onToggleOddsFormat?: (format: OddsFormat) => void;
   currentLeg?: ParlayLeg;
+  initialPlayer?: ActivePlayer | null;
 }
 
 // Sample Kalshi NFL Game Line contracts (KXNFLGAME, KXNFLSPREAD, KXNFLTOTAL)
@@ -293,6 +294,177 @@ function buildKalshiContractsForPlayer(
   }
 }
 
+function getPlayerContracts(
+  selectedPlayer: ActivePlayer | null,
+  statCategory: string,
+  kalshiProps: any[] = [],
+): KalshiPropContract[] {
+  if (!selectedPlayer) return [];
+  if (kalshiProps.length > 0) {
+    const pNameLower = selectedPlayer.name.toLowerCase();
+    const matched = kalshiProps.filter(
+      (p) =>
+        (p.player_name || "").toLowerCase() === pNameLower &&
+        (!statCategory || p.stat_category === statCategory),
+    );
+    if (matched.length > 0) {
+      const mapped = matched.map((m): KalshiPropContract => {
+        const yCents = Number(m.yes_cents ?? m.yes_price_cents ?? 54);
+        const nCents = Number(m.no_cents ?? m.no_price_cents ?? 46);
+        return {
+          market_ticker: m.market_ticker,
+          series_ticker: m.series_ticker,
+          stat_category: m.stat_category || statCategory,
+          label: m.label || m.title,
+          yes_cents: yCents,
+          no_cents: nCents,
+          yes_odds:
+            m.yes_odds ||
+            m.yes_odds_american ||
+            kalshiCentsToAmerican(yCents),
+          no_odds:
+            m.no_odds || m.no_odds_american || kalshiCentsToAmerican(nCents),
+          kickoff_time: m.kickoff_time,
+          game_id: m.game_id,
+        };
+      });
+      const extractNumericMilestone = (label: string) => {
+        const match = label.match(/(\d+(?:\.\d+)?)/);
+        return match ? parseFloat(match[1]) : 0;
+      };
+      mapped.sort((a, b) => {
+        if (b.yes_cents !== a.yes_cents) return b.yes_cents - a.yes_cents;
+        return (
+          extractNumericMilestone(a.label) - extractNumericMilestone(b.label)
+        );
+      });
+      return mapped;
+    }
+    return [];
+  }
+  return buildKalshiContractsForPlayer(selectedPlayer, statCategory);
+}
+
+function resolveInitialPlayerPropState(
+  currentLeg: ParlayLeg | undefined,
+  activePlayers: ActivePlayer[],
+  kalshiProps: any[] = [],
+  initialPlayer: ActivePlayer | null = null,
+) {
+  if (currentLeg?.status !== "submitted") {
+    return {
+      initialPlayer: initialPlayer || null,
+      initialCategory: "Touchdowns",
+      initialSide: "yes" as "yes" | "no",
+      initialContractIdx: null as number | null,
+    };
+  }
+
+  const ticker = currentLeg.kalshi_market_ticker || "";
+  const desc = currentLeg.description || "";
+
+  const isGameTicker =
+    ticker.startsWith("KXNFLGAME") ||
+    ticker.startsWith("KXNFLSPREAD") ||
+    ticker.startsWith("KXNFLTOTAL");
+  const isGameDesc =
+    !desc.includes("•") &&
+    (desc.includes("Spread") ||
+      desc.includes("Moneyline") ||
+      desc.startsWith("Over ") ||
+      desc.startsWith("Under "));
+
+  if (isGameTicker || isGameDesc) {
+    return {
+      initialPlayer: initialPlayer || null,
+      initialCategory: "Touchdowns",
+      initialSide: "yes" as "yes" | "no",
+      initialContractIdx: null as number | null,
+    };
+  }
+
+  const matchedLiveProp = ticker
+    ? kalshiProps.find((p) => p.market_ticker === ticker)
+    : undefined;
+
+  let playerName = matchedLiveProp?.player_name || "";
+  if (!playerName && desc.includes("•")) {
+    playerName = desc
+      .split("•")[0]
+      .replace(/\([^)]*\)/g, "")
+      .trim();
+  }
+
+  const matchedPlayer = playerName
+    ? activePlayers.find(
+        (p) => p.name.toLowerCase() === playerName.toLowerCase(),
+      ) || {
+        id: `restored_${playerName.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
+        name: playerName,
+        team: currentLeg.nfl_team || "NFL",
+        position: "FLEX",
+      }
+    : null;
+
+  let category = "Touchdowns";
+  if (matchedLiveProp?.stat_category) {
+    category = String(matchedLiveProp.stat_category);
+  } else if (
+    ticker.startsWith("KXNFLPASSYDS") ||
+    desc.includes("Pass Yards")
+  ) {
+    category = "Pass Yards";
+  } else if (
+    ticker.startsWith("KXNFLPASSTD") ||
+    desc.includes("Passing TD")
+  ) {
+    category = "Pass TDs";
+  } else if (
+    ticker.startsWith("KXNFLRSHYDS") ||
+    ticker.startsWith("KXNFLRUSHYDS") ||
+    desc.includes("Rush Yards")
+  ) {
+    category = "Rush Yards";
+  } else if (ticker.startsWith("KXNFLRECYDS") || desc.includes("Rec Yards")) {
+    category = "Rec Yards";
+  } else if (ticker.startsWith("KXNFLREC") || desc.includes("Reception")) {
+    category = "Receptions";
+  }
+
+  const side: "yes" | "no" =
+    currentLeg.kalshi_side ||
+    (desc.trim().toUpperCase().endsWith("(NO)") ? "no" : "yes");
+
+  let matchedIdx: number | null = null;
+  if (matchedPlayer) {
+    const contracts = getPlayerContracts(matchedPlayer, category, kalshiProps);
+    if (ticker) {
+      const idx = contracts.findIndex((c) => c.market_ticker === ticker);
+      if (idx !== -1) matchedIdx = idx;
+    }
+    if (matchedIdx === null && desc.includes("•")) {
+      const labelPart = desc
+        .split("•")[1]
+        ?.replace(/\((YES|NO)\)\s*$/i, "")
+        .trim()
+        .toLowerCase();
+      if (labelPart) {
+        const idx = contracts.findIndex(
+          (c) => c.label.trim().toLowerCase() === labelPart,
+        );
+        if (idx !== -1) matchedIdx = idx;
+      }
+    }
+  }
+
+  return {
+    initialPlayer: matchedPlayer,
+    initialCategory: category,
+    initialSide: side,
+    initialContractIdx: matchedIdx,
+  };
+}
+
 export const PickModal: React.FC<Props> = ({
   isOpen,
   onClose,
@@ -306,6 +478,7 @@ export const PickModal: React.FC<Props> = ({
   oddsFormat = "american",
   onToggleOddsFormat,
   currentLeg,
+  initialPlayer = null,
 }) => {
   const gamesList = kalshiGames.length > 0 ? kalshiGames : SAMPLE_KALSHI_GAMES;
 
@@ -321,18 +494,57 @@ export const PickModal: React.FC<Props> = ({
     return () => clearInterval(interval);
   }, [isOpen, lastUpdated]);
 
+  const isGameInitial = useMemo(() => {
+    if (currentLeg?.status !== "submitted") return false;
+    const ticker = currentLeg.kalshi_market_ticker || "";
+    const desc = currentLeg.description || "";
+    return (
+      ticker.startsWith("KXNFLGAME") ||
+      ticker.startsWith("KXNFLSPREAD") ||
+      ticker.startsWith("KXNFLTOTAL") ||
+      (!desc.includes("•") &&
+        (desc.includes("Spread") ||
+          desc.includes("Moneyline") ||
+          desc.startsWith("Over ") ||
+          desc.startsWith("Under ")))
+    );
+  }, [currentLeg]);
+
   // Only Kalshi API-backed tabs: Player Prop and Game Line (no manual Custom tab)
-  const [tab, setTab] = useState<"prop" | "mainline">("prop");
+  const [tab, setTab] = useState<"prop" | "mainline">(
+    isGameInitial ? "mainline" : "prop",
+  );
+
+  const resolvedInitial = useMemo(
+    () =>
+      resolveInitialPlayerPropState(
+        currentLeg,
+        activePlayers,
+        kalshiProps,
+        initialPlayer,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   // Player Prop State
   const [selectedPlayer, setSelectedPlayer] = useState<ActivePlayer | null>(
-    null,
+    resolvedInitial.initialPlayer,
   );
-  const [statCategory, setStatCategory] = useState<string>("Touchdowns");
-  const [selectedContractIdx, setSelectedContractIdx] = useState<number>(0);
-  const [selectedSide, setSelectedSide] = useState<"yes" | "no">("yes");
+  const [statCategory, setStatCategory] = useState<string>(
+    resolvedInitial.initialCategory,
+  );
+  const [selectedContractIdx, setSelectedContractIdx] = useState<number | null>(
+    resolvedInitial.initialContractIdx,
+  );
+  const [selectedSide, setSelectedSide] = useState<"yes" | "no">(
+    resolvedInitial.initialSide,
+  );
   const [showMoreAbove, setShowMoreAbove] = useState<boolean>(false);
   const [showMoreBelow, setShowMoreBelow] = useState<boolean>(false);
+  const prevSelectionKeyRef = useRef<string>(
+    `${resolvedInitial.initialPlayer?.id || ""}:${resolvedInitial.initialCategory}:${currentLeg?.id || ""}:${currentLeg?.status || ""}`,
+  );
 
   // Mainline State
   const [selectedGame, setSelectedGame] = useState<GameLineOption>(
@@ -377,12 +589,14 @@ export const PickModal: React.FC<Props> = ({
   // Restore existing submitted leg selection when modal opens (or reset to empty if pending)
   useEffect(() => {
     if (!isOpen) {
+      prevSelectionKeyRef.current = "";
       return;
     }
 
     if (!currentLeg || currentLeg.status !== "submitted") {
       setTab("prop");
-      setSelectedPlayer(null);
+      setSelectedPlayer(initialPlayer || null);
+      setSelectedContractIdx(null);
       setGameQuery("");
       return;
     }
@@ -507,7 +721,7 @@ export const PickModal: React.FC<Props> = ({
     } else {
       setStatCategory("Touchdowns");
     }
-  }, [isOpen, currentLeg]);
+  }, [isOpen, currentLeg, initialPlayer]);
 
   // Categories available for the currently selected player
   const playerCategories = useMemo(() => {
@@ -559,50 +773,7 @@ export const PickModal: React.FC<Props> = ({
   }, [selectedPlayer, playerCategories, statCategory]);
 
   const availableContracts = useMemo(() => {
-    if (!selectedPlayer) return [];
-    if (kalshiProps.length > 0) {
-      const pNameLower = selectedPlayer.name.toLowerCase();
-      const matched = kalshiProps.filter(
-        (p) =>
-          (p.player_name || "").toLowerCase() === pNameLower &&
-          (!statCategory || p.stat_category === statCategory),
-      );
-      if (matched.length > 0) {
-        const mapped = matched.map((m): KalshiPropContract => {
-          const yCents = Number(m.yes_cents ?? m.yes_price_cents ?? 54);
-          const nCents = Number(m.no_cents ?? m.no_price_cents ?? 46);
-          return {
-            market_ticker: m.market_ticker,
-            series_ticker: m.series_ticker,
-            stat_category: m.stat_category || statCategory,
-            label: m.label || m.title,
-            yes_cents: yCents,
-            no_cents: nCents,
-            yes_odds:
-              m.yes_odds ||
-              m.yes_odds_american ||
-              kalshiCentsToAmerican(yCents),
-            no_odds:
-              m.no_odds || m.no_odds_american || kalshiCentsToAmerican(nCents),
-            kickoff_time: m.kickoff_time,
-            game_id: m.game_id,
-          };
-        });
-        const extractNumericMilestone = (label: string) => {
-          const match = label.match(/(\d+(?:\.\d+)?)/);
-          return match ? parseFloat(match[1]) : 0;
-        };
-        mapped.sort((a, b) => {
-          if (b.yes_cents !== a.yes_cents) return b.yes_cents - a.yes_cents;
-          return (
-            extractNumericMilestone(a.label) - extractNumericMilestone(b.label)
-          );
-        });
-        return mapped;
-      }
-      return [];
-    }
-    return buildKalshiContractsForPlayer(selectedPlayer, statCategory);
+    return getPlayerContracts(selectedPlayer, statCategory, kalshiProps);
   }, [selectedPlayer, statCategory, kalshiProps]);
 
   // Identify the 5 contiguous contracts closest to even odds (50¢ / +100)
@@ -644,8 +815,12 @@ export const PickModal: React.FC<Props> = ({
   }, [availableContracts]);
 
   // Select the user's existing submitted contract if it belongs to this player/category,
-  // otherwise default to the contract closest to even odds (50¢ / +100)
+  // otherwise do not auto-select any contract
   useEffect(() => {
+    const selectionKey = `${selectedPlayer?.id || ""}:${statCategory}:${currentLeg?.id || ""}:${currentLeg?.status || ""}`;
+    const keyChanged = prevSelectionKeyRef.current !== selectionKey;
+    prevSelectionKeyRef.current = selectionKey;
+
     if (
       currentLeg?.status === "submitted" &&
       selectedPlayer &&
@@ -688,14 +863,15 @@ export const PickModal: React.FC<Props> = ({
       }
     }
 
-    setSelectedContractIdx(evenWindow.closestIdx);
-    setSelectedSide("yes");
-    setShowMoreAbove(false);
-    setShowMoreBelow(false);
+    if (keyChanged) {
+      setSelectedContractIdx(null);
+      setSelectedSide("yes");
+      setShowMoreAbove(false);
+      setShowMoreBelow(false);
+    }
   }, [
     selectedPlayer?.id,
     statCategory,
-    evenWindow.closestIdx,
     evenWindow.start,
     evenWindow.end,
     availableContracts,
@@ -703,7 +879,11 @@ export const PickModal: React.FC<Props> = ({
   ]);
 
   const activeContract =
-    availableContracts[selectedContractIdx] || availableContracts[0];
+    selectedContractIdx !== null &&
+    selectedContractIdx >= 0 &&
+    selectedContractIdx < availableContracts.length
+      ? availableContracts[selectedContractIdx]
+      : null;
 
   if (!isOpen) return null;
 
@@ -739,6 +919,9 @@ export const PickModal: React.FC<Props> = ({
       previewGameId = activeContract.game_id;
       const sideBadge = selectedSide === "yes" ? "YES" : "NO";
       previewLine = `${playerText} • ${activeContract.label} (${sideBadge})`;
+    } else if (selectedPlayer) {
+      previewLine = "Select a contract strike & side above";
+      previewTeam = selectedPlayer.team || "";
     } else {
       previewLine = "Search & select an active NFL player above";
       previewTeam = "";
