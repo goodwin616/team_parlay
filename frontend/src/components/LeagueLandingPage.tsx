@@ -14,6 +14,10 @@ export const LeagueLandingPage: React.FC<Props> = ({
   const [inputVal, setInputVal] = useState('');
   const [error, setError] = useState('');
 
+  const filteredRecentLeagues = recentLeagues.filter(
+    (l) => l.leagueId && l.leagueId.trim().toLowerCase() !== 'demo'
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = parseLeagueIdInput(inputVal);
@@ -97,14 +101,14 @@ export const LeagueLandingPage: React.FC<Props> = ({
         </div>
 
         {/* Recently Visited Leagues */}
-        {recentLeagues.length > 0 && (
+        {filteredRecentLeagues.length > 0 && (
           <div className="bg-sleeper-card/70 border border-sleeper-border rounded-2xl p-4 space-y-2.5">
             <div className="flex items-center space-x-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">
               <Clock className="w-3.5 h-3.5 text-sleeper-accent" />
               <span>Recently Visited Leagues</span>
             </div>
             <div className="space-y-1.5">
-              {recentLeagues.map((league) => (
+              {filteredRecentLeagues.map((league) => (
                 <button
                   key={league.leagueId}
                   type="button"

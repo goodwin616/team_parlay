@@ -122,14 +122,20 @@ export function getRecentLeagues(): RecentLeague[] {
     const raw = localStorage.getItem(RECENT_LEAGUES_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (league: RecentLeague) =>
+        league &&
+        typeof league.leagueId === 'string' &&
+        league.leagueId.trim().toLowerCase() !== 'demo'
+    );
   } catch {
     return [];
   }
 }
 
 export function saveRecentLeague(leagueId: string, name?: string): void {
-  if (!leagueId) return;
+  if (!leagueId || leagueId.trim().toLowerCase() === 'demo') return;
   const existing = getRecentLeagues();
   const prev = existing.find(l => l.leagueId === leagueId);
   const entry: RecentLeague = {

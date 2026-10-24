@@ -7,6 +7,8 @@ import {
   getCurrentRosterId,
   parseLeagueIdInput,
   getLeagueIdFromLocation,
+  getRecentLeagues,
+  saveRecentLeague,
 } from '../services/auth';
 
 describe('Auth & Multi-League URL Service', () => {
@@ -78,5 +80,42 @@ describe('Auth & Multi-League URL Service', () => {
     expect(getLeagueIdFromLocation({ pathname: '/1312915483992809472', search: '' })).toBe('1312915483992809472');
     expect(getLeagueIdFromLocation({ pathname: '/league/1312915483992809472', search: '' })).toBe('1312915483992809472');
     expect(getLeagueIdFromLocation({ pathname: '/', search: '?league=demo' })).toBe('demo');
+  });
+
+  describe('Recent Leagues storage', () => {
+    it('does not save "demo" (case-insensitive) to recent leagues', () => {
+      saveRecentLeague('demo');
+      expect(getRecentLeagues()).toEqual([]);
+
+      saveRecentLeague('Demo', 'Demo League');
+      expect(getRecentLeagues()).toEqual([]);
+
+      saveRecentLeague('DEMO');
+      expect(getRecentLeagues()).toEqual([]);
+
+      saveRecentLeague('123456', 'My League');
+      expect(getRecentLeagues()).toHaveLength(1);
+      expect(getRecentLeagues()[0].leagueId).toBe('123456');
+      expect(getRecentLeagues()[0].name).toBe('My League');
+
+      // Attempting to save demo after a real league should not add it
+      saveRecentLeague('demo');
+      expect(getRecentLeagues()).toHaveLength(1);
+      expect(getRecentLeagues()[0].leagueId).toBe('123456');
+    });
+
+    it('filters out any legacy "demo" entries stored in localStorage', () => {
+      const legacyData = [
+        { leagueId: 'demo', name: 'Demo League', lastVisited: '2026-10-23T00:00:00.000Z' },
+        { leagueId: 'DEMO', name: 'Demo League 2', lastVisited: '2026-10-23T00:00:00.000Z' },
+        { leagueId: '1312915483992809472', name: 'Championship League', lastVisited: '2026-10-23T01:00:00.000Z' },
+      ];
+      localStorage.setItem('tp_recent_leagues', JSON.stringify(legacyData));
+
+      const leagues = getRecentLeagues();
+      expect(leagues).toHaveLength(1);
+      expect(leagues[0].leagueId).toBe('1312915483992809472');
+      expect(leagues[0].name).toBe('Championship League');
+    });
   });
 });
