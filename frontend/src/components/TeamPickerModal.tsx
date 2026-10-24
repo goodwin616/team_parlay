@@ -84,8 +84,21 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
     } catch (err: any) {
       // Fallback for demo or emulator offline
       if (leagueId.toLowerCase() === 'demo') {
+        if (!team.claimed_by && !confirm) {
+          setPendingTeam(team);
+          setPendingClaimedBy(null);
+          setConfirmMode('claim');
+          setConfirmModalOpen(true);
+          setLoadingRosterId(null);
+          return;
+        }
         setConfirmModalOpen(false);
-        onTeamSelected(team.roster_id, team.claimed_by);
+        const demoClaimedBy = team.claimed_by || {
+          uid: currentUserId || 'demo_user',
+          name: 'Demo Manager',
+          claimed_at: new Date().toISOString(),
+        };
+        onTeamSelected(team.roster_id, demoClaimedBy);
         onClose();
         return;
       }
