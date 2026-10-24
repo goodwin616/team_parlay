@@ -196,5 +196,24 @@ describe('CR-009: Loading Skeletons & Flash Mitigation', () => {
       expect(html).toContain('Team Parlay Tracker');
       expect(html).toContain('Launch Demo League');
     });
+
+    it('prompts unassigned user with Select Your Team CTA and does not auto-assign roster 1 (CR-012)', () => {
+      globalThis.window.location = {
+        pathname: '/demo',
+        search: '',
+      } as any;
+
+      const html = cleanText(renderToString(<App />));
+
+      // Header should show prominent "Select Your Team" CTA
+      expect(html).toContain('Select Your Team');
+      expect(html).toContain('aria-label="Select Your Fantasy Team"');
+
+      // Top header should NOT display roster 1 Blake/Philly Special as active user team
+      expect(html).not.toContain('Switch Team: currently viewing Blake');
+
+      // None of the legs should be claimed / highlighted as current user's leg
+      expect(html).not.toContain('(You)');
+    });
   });
 });

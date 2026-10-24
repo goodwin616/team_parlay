@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { SignInGate } from '../components/SignInGate';
 import { ClaimConfirmModal } from '../components/ClaimConfirmModal';
+import { TeamPickerModal } from '../components/TeamPickerModal';
 import { ParlayCard } from '../components/ParlayCard';
+import { resolveUserTeam } from '../App';
 import { WeeklyParlay, TeamProfile } from '../types';
 
 describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
@@ -134,6 +136,195 @@ describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
 
       expect(html).toContain('⚠️');
       expect(html).toContain('Pick submitted by Commish Dave');
+    });
+  });
+
+  describe('CR-012: Unassigned Team State & Explicit Team Selection', () => {
+    const mockTeams: TeamProfile[] = [
+      { roster_id: 1, owner_id: 'u1', owner_name: 'Blake', team_name: 'Philly Special' },
+      { roster_id: 2, owner_id: 'u2', owner_name: 'Bob', team_name: 'Gridiron Clowns' },
+    ];
+
+    const testParlay: WeeklyParlay = {
+      week: 4,
+      season: '2026',
+      status: 'open',
+      contains_sgp: false,
+      bettor: { roster_id: 2, team_name: 'Gridiron Clowns', owner_name: 'Bob', points_last_week: 78.4 },
+      earliest_kickoff: '2026-10-29T20:15:00Z',
+      legs: [
+        {
+          id: 'l1',
+          roster_id: 1,
+          team_name: 'Philly Special',
+          owner_name: 'Blake',
+          nfl_team: 'PHI',
+          description: 'Saquon Barkley Anytime TD',
+          odds_american: '-110',
+          odds_decimal: 1.91,
+          status: 'submitted',
+        },
+        {
+          id: 'l2',
+          roster_id: 2,
+          team_name: 'Gridiron Clowns',
+          owner_name: 'Bob',
+          nfl_team: 'KC',
+          description: '',
+          odds_american: '-110',
+          odds_decimal: 1.91,
+          status: 'pending',
+        },
+      ],
+      estimated_odds_american: '+300',
+      estimated_multiplier: 4.0,
+      estimated_payout: 20.0,
+      actual_payout: null,
+      actual_odds_american: null,
+    };
+
+    it('renders ParlayCard with currentRosterId === null without marking any leg as (You)', () => {
+      const html = renderToString(
+        <ParlayCard
+          parlay={testParlay}
+          currentRosterId={null}
+          onOpenPickModal={() => {}}
+        />
+      );
+
+      // No (You) badge should be present on any leg
+      expect(html).not.toContain('(You)');
+      // Prompt title on clickable legs for unassigned user
+      expect(html).toContain('Select your team to make a pick');
+    });
+
+    it('renders TeamPickerModal with currentRosterId === null without highlighting any team as active', () => {
+      const html = renderToString(
+        <TeamPickerModal
+          isOpen={true}
+          onClose={() => {}}
+          teams={mockTeams}
+          currentRosterId={null}
+          currentUserId="user_test"
+          leagueId="demo"
+          season="2026"
+          onTeamSelected={() => {}}
+        />
+      );
+
+      // No team should have the "Active" badge
+      expect(html).not.toContain('Active');
+      // Both teams show "Select" action button
+      expect(html).toContain('Select');
+      expect(html).toContain('Philly Special');
+      expect(html).toContain('Gridiron Clowns');
+    });
+
+    it('renders TeamPickerModal with an active selection when currentRosterId is set', () => {
+      const html = renderToString(
+        <TeamPickerModal
+          isOpen={true}
+          onClose={() => {}}
+          teams={mockTeams}
+          currentRosterId={1}
+          currentUserId="user_test"
+          leagueId="demo"
+          season="2026"
+          onTeamSelected={() => {}}
+        />
+      );
+
+      // Roster 1 should show the Active badge
+      expect(html).toContain('Active');
+    });
+
+    describe('resolveUserTeam Logic', () => {
+      it('returns null rosterId and openPicker=true when user has no claimed team, server team, or cache', async () => {
+        const result = await resolveUserTeam({
+          leagueId: 'test_league',
+          user: { uid: 'unassigned_user' },
+          teams: mockTeams,
+          getMyTeamFn: async () => ({ data: null }),
+          getCachedTeamIdFn: () => null,
+        });
+
+        // Must NOT default to 1!
+        expect(result.rosterId).toBeNull();
+        expect(result.openPicker).toBe(true);
+      });
+
+      it('returns server rosterId and openPicker=false when get_my_team returns a claimed team', async () => {
+        const result = await resolveUserTeam({
+          leagueId: 'test_league',
+          user: { uid: 'user_1' },
+          teams: mockTeams,
+          getMyTeamFn: async () => ({ data: { roster_id: 2 } }),
+          getCachedTeamIdFn: () => null,
+        });
+
+        expect(result.rosterId).toBe(2);
+        expect(result.openPicker).toBe(false);
+      });
+
+      it('returns cached rosterId when stored in client cache and valid in current teams', async () => {
+        const result = await resolveUserTeam({
+          leagueId: 'test_league',
+          user: { uid: 'user_1' },
+          teams: mockTeams,
+          getMyTeamFn: async () => {
+            throw new Error('Offline');
+          },
+          getCachedTeamIdFn: () => 1,
+        });
+
+        expect(result.rosterId).toBe(1);
+        expect(result.openPicker).toBe(false);
+      });
+
+      it('returns rosterId of claimed team when user matches claimed_by.uid in loaded teams', async () => {
+        const teamsWithClaim: TeamProfile[] = [
+          { roster_id: 1, owner_id: 'u1', owner_name: 'Blake', team_name: 'Philly Special' },
+          {
+            roster_id: 2,
+            owner_id: 'u2',
+            owner_name: 'Bob',
+            team_name: 'Gridiron Clowns',
+            claimed_by: { uid: 'user_bob', name: 'Bob B', claimed_at: '2026-10-24T00:00:00Z' },
+          },
+        ];
+
+        const result = await resolveUserTeam({
+          leagueId: 'test_league',
+          user: { uid: 'user_bob' },
+          teams: teamsWithClaim,
+          getMyTeamFn: async () => ({ data: null }),
+          getCachedTeamIdFn: () => null,
+        });
+
+        expect(result.rosterId).toBe(2);
+        expect(result.openPicker).toBe(false);
+      });
+    });
+
+    it('sets currentRosterId and updates claimed_by when onTeamSelected is triggered', () => {
+      let selectedRosterId: number | null = null;
+      let teamList = [...mockTeams];
+
+      const handleTeamSelected = (rosterId: number, claimedBy?: any) => {
+        selectedRosterId = rosterId;
+        if (claimedBy) {
+          teamList = teamList.map((t) =>
+            t.roster_id === rosterId ? { ...t, claimed_by: claimedBy } : t
+          );
+        }
+      };
+
+      // User explicitly claims roster 2
+      const claimPayload = { uid: 'new_claimer', name: 'New Manager', claimed_at: '2026-10-24T00:00:00Z' };
+      handleTeamSelected(2, claimPayload);
+
+      expect(selectedRosterId).toBe(2);
+      expect(teamList.find((t) => t.roster_id === 2)?.claimed_by?.uid).toBe('new_claimer');
     });
   });
 });

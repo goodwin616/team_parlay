@@ -18,6 +18,7 @@ interface Props {
   parlay: WeeklyParlay;
   currentRosterId: number | null;
   onOpenPickModal: (leg: ParlayLeg) => void;
+  onOpenTeamPicker?: () => void;
   oddsFormat?: OddsFormat;
   onToggleOddsFormat?: (format: OddsFormat) => void;
 }
@@ -26,6 +27,7 @@ export const ParlayCard: React.FC<Props> = ({
   parlay,
   currentRosterId,
   onOpenPickModal,
+  onOpenTeamPicker,
   oddsFormat = 'american',
   onToggleOddsFormat,
 }) => {
@@ -292,32 +294,52 @@ export const ParlayCard: React.FC<Props> = ({
         {orderedLegs.map((leg, index) => {
           const isCurrentUserLeg = currentRosterId !== null && leg.roster_id === currentRosterId;
           const isSubmitted = leg.status === 'submitted';
+          const isUnassigned = currentRosterId === null;
           const canEdit = parlay.status === 'open' && isCurrentUserLeg;
+          const isClickable = parlay.status === 'open' && (isCurrentUserLeg || isUnassigned);
+
+          const handleClick = () => {
+            if (isCurrentUserLeg) {
+              onOpenPickModal(leg);
+            } else if (isUnassigned) {
+              if (onOpenTeamPicker) {
+                onOpenTeamPicker();
+              } else {
+                onOpenPickModal(leg);
+              }
+            }
+          };
 
           return (
             <div
               key={leg.id || `leg-${index}`}
-              role={canEdit ? 'button' : undefined}
-              tabIndex={canEdit ? 0 : undefined}
+              role={isClickable ? 'button' : undefined}
+              tabIndex={isClickable ? 0 : undefined}
               onKeyDown={
-                canEdit
+                isClickable
                   ? (e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        onOpenPickModal(leg);
+                        handleClick();
                       }
                     }
                   : undefined
               }
-              onClick={canEdit ? () => onOpenPickModal(leg) : undefined}
+              onClick={isClickable ? handleClick : undefined}
               className={`p-3.5 flex items-center justify-between transition ${
-                canEdit ? 'cursor-pointer hover:bg-sleeper-accent/15 active:scale-[0.995]' : ''
+                isClickable ? 'cursor-pointer hover:bg-sleeper-accent/15 active:scale-[0.995]' : ''
               } ${
                 isCurrentUserLeg
                   ? 'bg-sleeper-accent/[0.08]'
                   : 'hover:bg-white/[0.02]'
               }`}
-              title={canEdit ? 'Tap to submit or edit your weekly pick' : undefined}
+              title={
+                canEdit
+                  ? 'Tap to submit or edit your weekly pick'
+                  : isUnassigned && parlay.status === 'open'
+                  ? 'Select your team to make a pick'
+                  : undefined
+              }
             >
               <div className="flex items-start space-x-3 min-w-0 pr-2">
                 <div className="mt-0.5 shrink-0">

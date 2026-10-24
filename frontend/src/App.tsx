@@ -238,6 +238,57 @@ const MOCK_PAST_PARLAYS: WeeklyParlay[] = [
   },
 ];
 
+export interface ResolveTeamOptions {
+  leagueId: string;
+  user: { uid: string } | null;
+  teams: TeamProfile[];
+  getMyTeamFn?: (params: { league_id: string }) => Promise<{ data: { roster_id: number | null } | null }>;
+  getCachedTeamIdFn?: (leagueId: string) => number | null;
+}
+
+export async function resolveUserTeam({
+  leagueId,
+  user,
+  teams,
+  getMyTeamFn,
+  getCachedTeamIdFn = getCachedTeamId,
+}: ResolveTeamOptions): Promise<{ rosterId: number | null; openPicker: boolean }> {
+  if (!user || !leagueId) {
+    return { rosterId: null, openPicker: false };
+  }
+
+  // 1. Check get_my_team from server
+  if (getMyTeamFn) {
+    try {
+      const res = await getMyTeamFn({ league_id: leagueId });
+      if (res?.data && res.data.roster_id != null) {
+        return { rosterId: Number(res.data.roster_id), openPicker: false };
+      }
+    } catch {
+      // Functions offline, continue
+    }
+  }
+
+  // 2. Check cached team ID in localStorage
+  const cached = getCachedTeamIdFn(leagueId);
+  if (cached != null) {
+    const isValidInTeams = teams.length === 0 || teams.some((t) => t.roster_id === cached);
+    if (isValidInTeams) {
+      return { rosterId: cached, openPicker: false };
+    }
+  }
+
+  // 3. Fallback: Check if any team in loaded list is claimed by user
+  const claimedTeam = teams.find((t) => t.claimed_by && t.claimed_by.uid === user.uid);
+  if (claimedTeam) {
+    return { rosterId: claimedTeam.roster_id, openPicker: false };
+  }
+
+  // 4. Default: User has no claimed or cached team
+  // Do NOT set currentRosterId to 1. Leave as null and open team picker modal.
+  return { rosterId: null, openPicker: true };
+}
+
 export const App: React.FC = () => {
   const { user, loading: authLoading } = useAuthUser();
 
@@ -253,7 +304,7 @@ export const App: React.FC = () => {
   // League Data State
   const [season, setSeason] = useState<string>(() => String(new Date().getFullYear()));
   const [teams, setTeams] = useState<TeamProfile[]>(MOCK_TEAMS);
-  const [currentRosterId, setCurrentRosterId] = useState<number>(1);
+  const [currentRosterId, setCurrentRosterId] = useState<number | null>(null);
   const [parlay, setParlay] = useState<WeeklyParlay>(() => {
     if (typeof window !== 'undefined') {
       const initialId = getLeagueIdFromLocation(window.location);
@@ -518,46 +569,38 @@ export const App: React.FC = () => {
 
   // Retrieve user's saved team on sign-in / league change
   useEffect(() => {
-    if (!leagueId || !user) return;
+    if (!leagueId || !user) {
+      setCurrentRosterId(null);
+      return;
+    }
 
     let isMounted = true;
 
     const resolveTeam = async () => {
-      // 1. Try get_my_team from server
-      try {
-        const getMyTeamFn = httpsCallable<
-          { league_id: string },
-          { roster_id: number | null; season: string | null } | null
-        >(functions, 'get_my_team');
-        const res = await getMyTeamFn({ league_id: leagueId });
-        if (isMounted && res.data && res.data.roster_id != null) {
-          setCurrentRosterId(Number(res.data.roster_id));
-          saveCachedTeamId(leagueId, Number(res.data.roster_id));
-          return;
-        }
-      } catch {
-        // Functions offline, continue
-      }
+      const getMyTeamFn = httpsCallable<
+        { league_id: string },
+        { roster_id: number | null; season: string | null } | null
+      >(functions, 'get_my_team');
+
+      const result = await resolveUserTeam({
+        leagueId,
+        user,
+        teams,
+        getMyTeamFn: (p) => getMyTeamFn(p) as any,
+        getCachedTeamIdFn: getCachedTeamId,
+      });
 
       if (!isMounted) return;
 
-      // 2. Check cached team ID in localStorage
-      const cached = getCachedTeamId(leagueId);
-      if (cached != null) {
-        setCurrentRosterId(cached);
-        return;
+      if (result.rosterId !== null) {
+        setCurrentRosterId(result.rosterId);
+        saveCachedTeamId(leagueId, result.rosterId);
+      } else {
+        setCurrentRosterId(null);
+        if (result.openPicker) {
+          setIsTeamPickerOpen(true);
+        }
       }
-
-      // 3. Fallback: Check if any team in loaded list is claimed by user
-      const claimedTeam = teams.find(t => t.claimed_by && t.claimed_by.uid === user.uid);
-      if (claimedTeam) {
-        setCurrentRosterId(claimedTeam.roster_id);
-        saveCachedTeamId(leagueId, claimedTeam.roster_id);
-        return;
-      }
-
-      // 4. Default to first roster or prompt picker
-      setCurrentRosterId(1);
     };
 
     resolveTeam();
@@ -864,13 +907,21 @@ export const App: React.FC = () => {
     !leagueError &&
     (isLoadingLeague || !parlay.isRealDataLoaded);
 
-  const currentTeam = teams.find(t => t.roster_id === currentRosterId) || teams[0];
+  const currentTeam =
+    currentRosterId !== null
+      ? teams.find((t) => t.roster_id === currentRosterId) || null
+      : null;
   const isClaimedByOther = Boolean(
-    currentTeam.claimed_by && user && currentTeam.claimed_by.uid !== user.uid
+    currentTeam?.claimed_by && user && currentTeam.claimed_by.uid !== user.uid
   );
 
   // Submit pick for currently selected fantasy team
   const handlePickSubmit = async (pick: PickData) => {
+    if (currentRosterId === null || !currentTeam) {
+      setIsTeamPickerOpen(true);
+      return;
+    }
+
     const newLeg: ParlayLeg = {
       id: `leg_${currentRosterId}_${Date.now()}`,
       roster_id: currentRosterId,
@@ -983,7 +1034,7 @@ export const App: React.FC = () => {
                 <span className="hidden sm:inline">Archive</span>
               </button>
 
-              {/* Team Picker Badge with ⚠️ if claimed by another user */}
+              {/* Team Picker Badge with ⚠️ if claimed by another user or Select Your Team CTA */}
               {isRealLeagueLoading ? (
                 <div
                   data-testid="header-user-skeleton"
@@ -992,6 +1043,17 @@ export const App: React.FC = () => {
                   <div className="w-5 h-5 rounded-full bg-white/10" />
                   <div className="w-16 sm:w-20 h-3 bg-white/10 rounded" />
                 </div>
+              ) : currentRosterId === null || !currentTeam ? (
+                <button
+                  type="button"
+                  onClick={() => setIsTeamPickerOpen(true)}
+                  aria-label="Select Your Fantasy Team"
+                  className="h-9 px-3 py-1.5 rounded-xl bg-sleeper-accent text-black font-extrabold text-xs shadow-md shadow-sleeper-accent/20 hover:brightness-110 transition inline-flex items-center space-x-1.5 active:scale-95 cursor-pointer shrink-0"
+                  title="Click to select and claim your fantasy team"
+                >
+                  <UserCheck className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Select Your Team</span>
+                </button>
               ) : (
                 <button
                   type="button"
@@ -1131,10 +1193,15 @@ export const App: React.FC = () => {
                 parlay={parlay}
                 currentRosterId={currentRosterId}
                 onOpenPickModal={(leg) => {
+                  if (currentRosterId === null) {
+                    setIsTeamPickerOpen(true);
+                    return;
+                  }
                   if (leg.roster_id === currentRosterId) {
                     setIsPickOpen(true);
                   }
                 }}
+                onOpenTeamPicker={() => setIsTeamPickerOpen(true)}
                 oddsFormat={oddsFormat}
                 onToggleOddsFormat={handleToggleOddsFormat}
               />
@@ -1147,7 +1214,7 @@ export const App: React.FC = () => {
           isOpen={isPickOpen}
           onClose={() => setIsPickOpen(false)}
           onSubmitPick={handlePickSubmit}
-          rosterName={currentTeam.team_name}
+          rosterName={currentTeam?.team_name || ''}
           activePlayers={activePlayers}
           kalshiGames={kalshiGames}
           kalshiProps={kalshiProps}
@@ -1155,7 +1222,7 @@ export const App: React.FC = () => {
           lastUpdated={lastUpdated}
           oddsFormat={oddsFormat}
           onToggleOddsFormat={handleToggleOddsFormat}
-          currentLeg={parlay.legs.find(l => l.roster_id === currentRosterId)}
+          currentLeg={currentRosterId !== null ? parlay.legs.find(l => l.roster_id === currentRosterId) : undefined}
         />
 
         <PastSlipsArchive
@@ -1173,9 +1240,12 @@ export const App: React.FC = () => {
           currentUserId={user?.uid}
           leagueId={leagueId}
           season={season}
-          onTeamSelected={(rosterId) => {
+          onTeamSelected={(rosterId, claimedBy) => {
             setCurrentRosterId(rosterId);
             saveCachedTeamId(leagueId, rosterId);
+            if (claimedBy) {
+              setTeams(prev => prev.map(t => t.roster_id === rosterId ? { ...t, claimed_by: claimedBy } : t));
+            }
           }}
         />
       </div>
