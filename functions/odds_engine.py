@@ -1,6 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 import base64
+import logging
 import os
 import re
 import threading
@@ -17,6 +18,8 @@ from parlay_math import (
     kalshi_cents_to_american,
     calculate_parlay,
 )
+
+logger = logging.getLogger(__name__)
 
 KALSHI_PUBLIC_BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 
@@ -521,6 +524,25 @@ class KalshiApiClient:
                 market_obj = mve_data.get("market") or {}
                 combo_ticker = market_obj.get("ticker") or mve_data.get("ticker")
 
+                # Combo (MVE) markets are usually created with an empty orderbook
+                # (yes_ask=$1.00, yes_bid=$0) because Kalshi prices them via RFQ.
+                # Only treat it as a live quote when a real resting ask exists;
+                # otherwise extract_kalshi_price_cents would fall back to 54¢.
+                try:
+                    live_ask = float(market_obj.get("yes_ask_dollars") or 0)
+                except (TypeError, ValueError):
+                    live_ask = 0.0
+                if combo_ticker and not (0.0 < live_ask < 1.0):
+                    logger.info(
+                        "Kalshi combo %s has no resting liquidity (yes_ask=%s); using compound pricing",
+                        combo_ticker, market_obj.get("yes_ask_dollars"),
+                    )
+                    return {
+                        **base_stats,
+                        "kalshi_combo_ticker": combo_ticker,
+                        "pricing_source": "kalshi_compound",
+                    }
+
                 if combo_ticker:
                     combo_cents = extract_kalshi_price_cents(market_obj, "yes")
                     multiplier = kalshi_cents_to_decimal(combo_cents)
@@ -534,8 +556,8 @@ class KalshiApiClient:
                         "kalshi_combo_ticker": combo_ticker,
                         "pricing_source": "kalshi_mve",
                     }
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Kalshi combo quote failed, using compound pricing: %s", exc)
 
         return {
             **base_stats,
