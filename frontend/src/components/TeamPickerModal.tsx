@@ -142,7 +142,7 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
           )}
 
           {/* Teams List */}
-          <div className="p-4 space-y-2 overflow-y-auto divide-y divide-sleeper-border/30">
+          <div className="p-4 space-y-2 overflow-y-auto">
             {teams.map((t) => {
               const isSelected = currentRosterId !== null && t.roster_id === currentRosterId;
               const isClaimedByMe =
@@ -156,47 +156,53 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
                 <div
                   key={t.roster_id}
                   onClick={() => !isLoading && handleSelectTeam(t, false)}
-                  className={`pt-2.5 first:pt-0 flex items-center justify-between p-3 rounded-xl transition cursor-pointer ${
+                  className={`flex items-center justify-between p-3 rounded-xl transition cursor-pointer ${
                     isSelected
                       ? 'bg-sleeper-accent/15 border border-sleeper-accent/40'
                       : 'hover:bg-white/[0.04] border border-transparent'
                   }`}
                 >
-                  <div className="flex items-center space-x-3 min-w-0 pr-2">
-                    <div className="w-9 h-9 rounded-xl bg-sleeper-dark border border-sleeper-border flex items-center justify-center font-bold text-xs text-sleeper-accent shrink-0">
+                  <div className="flex items-center space-x-3 min-w-0 pr-2 flex-1">
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs leading-none tabular-nums tracking-tight shrink-0 border transition ${
+                        isSelected
+                          ? 'bg-sleeper-accent/20 border-sleeper-accent/50 text-sleeper-accent'
+                          : 'bg-sleeper-dark border-sleeper-border text-sleeper-accent'
+                      }`}
+                    >
                       #{t.roster_id}
                     </div>
 
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center space-x-2">
                         <span className="text-xs font-bold text-white truncate">
                           {t.team_name}
                         </span>
                         {isSelected && (
-                          <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-black bg-sleeper-accent text-black">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-sleeper-accent text-black leading-none shrink-0">
                             Active
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-sleeper-muted truncate">
+                      <div className="text-[11px] text-sleeper-muted truncate leading-tight mt-0.5">
                         Owner: {t.owner_name}
                       </div>
 
                       {/* Claim Status Label */}
-                      <div className="mt-1">
+                      <div className="mt-1 flex items-center">
                         {isClaimedByMe && (
-                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-emerald-400">
-                            <ShieldCheck className="w-3 h-3" />
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-emerald-400 leading-none">
+                            <ShieldCheck className="w-3 h-3 shrink-0" />
                             <span>Claimed by you</span>
                           </span>
                         )}
                         {isClaimedByOther && (
-                          <span className="text-[10px] text-amber-300 font-medium truncate block max-w-[200px]">
+                          <span className="text-[10px] text-amber-300 font-medium truncate block max-w-[200px] leading-tight">
                             Claimed by {t.claimed_by?.name || 'another manager'}
                           </span>
                         )}
                         {isUnclaimed && (
-                          <span className="text-[10px] text-gray-400 font-medium">
+                          <span className="text-[10px] text-gray-400 font-medium leading-none">
                             Unclaimed
                           </span>
                         )}
@@ -204,7 +210,7 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="shrink-0 pl-2">
+                  <div className="w-16 flex items-center justify-end shrink-0">
                     {isLoading ? (
                       <div className="w-5 h-5 rounded-full border-2 border-sleeper-accent border-t-transparent animate-spin" />
                     ) : isSelected ? (
@@ -214,7 +220,7 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
                     ) : (
                       <button
                         type="button"
-                        className="px-2.5 py-1 rounded-lg bg-sleeper-dark border border-sleeper-border hover:border-white/20 text-xs font-semibold text-gray-300 transition"
+                        className="inline-flex items-center justify-center px-3 py-1 rounded-lg bg-sleeper-dark border border-sleeper-border hover:border-white/20 text-xs font-semibold text-gray-300 transition leading-none shadow-sm"
                       >
                         Select
                       </button>
