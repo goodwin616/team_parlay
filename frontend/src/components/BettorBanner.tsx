@@ -38,7 +38,7 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
               </span>
             </h2>
             <p className="text-xs text-gray-300 mt-1 leading-snug">
-              {bettor.points_last_week.toFixed(1)} pts last week • On the hook for the $5.00 ticket
+              {bettor.points_last_week.toFixed(1)} pts last week
             </p>
           </div>
         </div>

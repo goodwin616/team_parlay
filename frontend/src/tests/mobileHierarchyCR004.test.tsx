@@ -103,9 +103,8 @@ describe('CR-004: Mobile Layout & Visual Hierarchy Refinements', () => {
 
     it('renders clean single-line subtext without stray bullet points', () => {
       const html = cleanText(renderToString(<BettorBanner parlay={sampleParlay} />));
-      expect(html).toContain(
-        '78.4 pts last week • On the hook for the $5.00 ticket'
-      );
+      expect(html).toContain('78.4 pts last week');
+      expect(html).not.toContain('On the hook');
       expect(html).not.toContain('prior week');
     });
 
