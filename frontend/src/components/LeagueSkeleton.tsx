@@ -35,9 +35,9 @@ export const BettorSpotlightSkeleton: React.FC<{ className?: string }> = ({ clas
     <div className="absolute top-0 right-0 -mr-8 -mt-8 w-24 h-24 rounded-full bg-amber-500/5 blur-xl pointer-events-none" />
 
     <div className="flex items-start justify-between gap-3">
-      <div className="flex items-start space-x-3.5 min-w-0 flex-1">
+      <div className="flex items-center space-x-3.5 min-w-0 flex-1">
         {/* Flame placeholder icon */}
-        <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/15 shrink-0 mt-0.5 flex items-center justify-center text-amber-400/30">
+        <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/15 shrink-0 flex items-center justify-center text-amber-400/30">
           <span className="text-lg">🔥</span>
         </div>
         <div className="min-w-0 flex-1 space-y-2">

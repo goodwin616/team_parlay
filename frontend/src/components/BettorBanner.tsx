@@ -18,8 +18,8 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
       <div className="absolute top-0 right-0 -mr-8 -mt-8 w-24 h-24 rounded-full bg-amber-500/10 blur-xl pointer-events-none" />
 
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start space-x-3.5 min-w-0">
-          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 shrink-0 mt-0.5">
+        <div className="flex items-center space-x-3.5 min-w-0">
+          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 shrink-0 flex items-center justify-center">
             <Flame className="w-5 h-5" />
           </div>
           <div className="min-w-0">

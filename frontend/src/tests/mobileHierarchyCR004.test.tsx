@@ -114,6 +114,13 @@ describe('CR-004: Mobile Layout & Visual Hierarchy Refinements', () => {
       expect(html).toContain('lucide-flame');
       expect(html).not.toContain('lucide-alert-circle');
     });
+
+    it('vertically centers flame icon container with the text column (CR-013)', () => {
+      const html = renderToString(<BettorBanner parlay={sampleParlay} />);
+      expect(html).toContain('flex items-center space-x-3.5 min-w-0');
+      // Verify mt-0.5 offset removed from icon container
+      expect(html).not.toMatch(/bg-amber-500\/10[^"]*mt-0\.5/);
+    });
   });
 
   describe('ParlayCard Visual Hierarchy & Summary Grid', () => {

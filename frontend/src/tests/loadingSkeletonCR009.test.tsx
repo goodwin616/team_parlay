@@ -94,6 +94,9 @@ describe('CR-009: Loading Skeletons & Flash Mitigation', () => {
       expect(html).toContain('bg-amber-500/10');
       // Stake due placeholder badge
       expect(html).toContain('bg-emerald-500/10');
+      // Flame icon vertical centering matching BettorBanner (CR-013)
+      expect(html).toContain('flex items-center space-x-3.5 min-w-0 flex-1');
+      expect(html).not.toMatch(/bg-amber-500\/10[^"]*mt-0\.5/);
     });
 
     it('renders ParlayCardSkeleton with header, progress bar, 4-metric grid, and 5 leg row placeholders', () => {
