@@ -1,6 +1,11 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from sleeper_sync import determine_weekly_bettor, fetch_active_nfl_players, fetch_sleeper_league_data
+from sleeper_sync import (
+    determine_weekly_bettor,
+    fetch_active_nfl_players,
+    fetch_sleeper_league_data,
+    build_teams_from_sleeper,
+)
 
 def test_determine_weekly_bettor_simple():
     matchups = [
@@ -86,3 +91,19 @@ def test_fetch_sleeper_league_data():
         assert "users" in data
         assert "matchups" in data
         assert mock_get.call_count == 3
+
+def test_build_teams_from_sleeper():
+    rosters = [
+        {"roster_id": 2, "owner_id": "u2"},
+        {"roster_id": 1, "owner_id": "u1"},
+    ]
+    users = [
+        {"user_id": "u1", "display_name": "Blake", "metadata": {"team_name": "Philly Special"}},
+        {"user_id": "u2", "display_name": "Bob", "metadata": {}},
+    ]
+    teams = build_teams_from_sleeper(rosters, users)
+    assert len(teams) == 2
+    assert teams[0]["roster_id"] == 1
+    assert teams[0]["team_name"] == "Philly Special"
+    assert teams[1]["roster_id"] == 2
+    assert teams[1]["owner_name"] == "Bob"

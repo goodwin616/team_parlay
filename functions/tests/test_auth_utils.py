@@ -1,11 +1,9 @@
-import pytest
 import hashlib
 from auth_utils import (
     hash_pin,
     generate_session_token,
     verify_pin_and_issue_token,
     verify_session_token,
-    create_break_glass_log,
 )
 
 def test_hash_pin():
@@ -36,19 +34,5 @@ def test_verify_pin_and_issue_token():
     failed = verify_pin_and_issue_token("0000", stored_hash, salt)
     assert failed is None
 
-    # Case insensitive hash comparison test
     token2 = verify_pin_and_issue_token("1234", stored_hash.upper(), salt)
     assert token2 is not None
-
-def test_create_break_glass_log():
-    # Break glass: executor (4) != bettor (2)
-    log_bg = create_break_glass_log(4, "Dave", 2)
-    assert log_bg["is_break_glass"] is True
-    assert log_bg["roster_id"] == 4
-    assert log_bg["owner_name"] == "Dave"
-
-    # Normal finalize: executor (2) == bettor (2)
-    log_normal = create_break_glass_log(2, "Bob", 2)
-    assert log_normal["is_break_glass"] is False
-    assert log_normal["roster_id"] == 2
-    assert log_normal["owner_name"] == "Bob"

@@ -1,6 +1,6 @@
 import uuid
 import hashlib
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
 def hash_pin(pin: str, salt: str) -> str:
     combined = f"{pin}:{salt}".encode("utf-8")
@@ -19,14 +19,3 @@ def verify_session_token(token: str, valid_tokens: Optional[List[str]]) -> bool:
     if not token or not valid_tokens:
         return False
     return token in valid_tokens
-
-def create_break_glass_log(
-    executor_roster_id: int,
-    executor_name: str,
-    bettor_roster_id: int
-) -> Dict[str, Any]:
-    return {
-        "roster_id": executor_roster_id,
-        "owner_name": executor_name,
-        "is_break_glass": (executor_roster_id != bettor_roster_id)
-    }
