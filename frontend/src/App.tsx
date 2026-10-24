@@ -12,6 +12,7 @@ import { ParlayCard } from './components/ParlayCard';
 import { PickModal, PickData } from './components/PickModal';
 import { PastSlipsArchive } from './components/PastSlipsArchive';
 import { LeagueLandingPage } from './components/LeagueLandingPage';
+import { LeagueSkeleton } from './components/LeagueSkeleton';
 import { WeeklyParlay, ActivePlayer, TeamProfile, ParlayLeg, GameLineOption } from './types';
 import {
   fetchDirectKalshiNflBoard,
@@ -249,7 +250,15 @@ export const App: React.FC = () => {
   const [season, setSeason] = useState<string>(() => String(new Date().getFullYear()));
   const [teams, setTeams] = useState<TeamProfile[]>(MOCK_TEAMS);
   const [currentRosterId, setCurrentRosterId] = useState<number>(1);
-  const [parlay, setParlay] = useState<WeeklyParlay>(INITIAL_PARLAY);
+  const [parlay, setParlay] = useState<WeeklyParlay>(() => {
+    if (typeof window !== 'undefined') {
+      const initialId = getLeagueIdFromLocation(window.location);
+      if (initialId && initialId.toLowerCase() === 'demo') {
+        return { ...INITIAL_PARLAY, isRealDataLoaded: true };
+      }
+    }
+    return INITIAL_PARLAY;
+  });
   const [pastParlays, setPastParlays] = useState<WeeklyParlay[]>(MOCK_PAST_PARLAYS);
   const [oddsFormat, setOddsFormat] = useState<OddsFormat>(() => {
     if (typeof window !== 'undefined') {
@@ -265,7 +274,13 @@ export const App: React.FC = () => {
       window.localStorage.setItem('parlay_odds_format', format);
     }
   };
-  const [isLoadingLeague, setIsLoadingLeague] = useState<boolean>(false);
+  const [isLoadingLeague, setIsLoadingLeague] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const initialId = getLeagueIdFromLocation(window.location);
+      return Boolean(initialId && initialId.toLowerCase() !== 'demo');
+    }
+    return false;
+  });
   const [leagueError, setLeagueError] = useState<string | null>(null);
   const syncedLeagueRef = useRef<string | null>(null);
 
@@ -447,7 +462,15 @@ export const App: React.FC = () => {
   // Listen to browser back/forward navigation
   useEffect(() => {
     const onPopState = () => {
-      setLeagueId(getLeagueIdFromLocation(window.location));
+      const nextId = getLeagueIdFromLocation(window.location);
+      const isNextDemo = nextId?.toLowerCase() === 'demo';
+      setLeagueId(nextId);
+      setIsLoadingLeague(Boolean(nextId && !isNextDemo));
+      if (nextId && !isNextDemo) {
+        setParlay((prev) => ({ ...prev, isRealDataLoaded: false }));
+      } else if (nextId && isNextDemo) {
+        setParlay({ ...INITIAL_PARLAY, isRealDataLoaded: true });
+      }
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -457,10 +480,18 @@ export const App: React.FC = () => {
     if (!nextLeagueId) {
       window.history.pushState({}, '', '/');
       setLeagueId(null);
+      setIsLoadingLeague(false);
       setRecentLeagues(getRecentLeagues());
       return;
     }
     window.history.pushState({}, '', `/${nextLeagueId}`);
+    const isNextDemo = nextLeagueId.toLowerCase() === 'demo';
+    setIsLoadingLeague(!isNextDemo);
+    if (!isNextDemo) {
+      setParlay((prev) => ({ ...prev, isRealDataLoaded: false }));
+    } else {
+      setParlay({ ...INITIAL_PARLAY, isRealDataLoaded: true });
+    }
     setLeagueId(nextLeagueId);
     saveRecentLeague(nextLeagueId);
     setRecentLeagues(getRecentLeagues());
@@ -487,7 +518,7 @@ export const App: React.FC = () => {
 
     if (isDemo) {
       setTeams(MOCK_TEAMS);
-      setParlay(INITIAL_PARLAY);
+      setParlay({ ...INITIAL_PARLAY, isRealDataLoaded: true });
       setPastParlays(MOCK_PAST_PARLAYS);
       setLeagueName('Demo Sleeper League');
       setIsLoadingLeague(false);
@@ -588,6 +619,7 @@ export const App: React.FC = () => {
           season: resolvedSeason,
           status: 'open',
           contains_sgp: false,
+          isRealDataLoaded: true,
           bettor: {
             roster_id: bettorTeam.roster_id,
             team_name: bettorTeam.team_name,
@@ -617,7 +649,9 @@ export const App: React.FC = () => {
           const hasSubmittedForThisLeague =
             prev.legs.some((l) => l.status === 'submitted') &&
             prev.legs.every((l) => builtTeams.some((t) => t.roster_id === l.roster_id));
-          return hasSubmittedForThisLeague ? prev : freshParlay;
+          return hasSubmittedForThisLeague
+            ? { ...prev, isRealDataLoaded: true }
+            : freshParlay;
         });
         setIsLoadingLeague(false);
 
@@ -746,7 +780,7 @@ export const App: React.FC = () => {
 
         const past = allParlays.filter(p => p.week !== active.week);
 
-        if (active) setParlay(active);
+        if (active) setParlay({ ...active, isRealDataLoaded: true });
         setPastParlays(past);
         setIsLoadingLeague(false);
       },
@@ -769,6 +803,13 @@ export const App: React.FC = () => {
       />
     );
   }
+
+  const isDemo = leagueId?.toLowerCase() === 'demo';
+  const isRealLeagueLoading =
+    !isDemo &&
+    Boolean(leagueId) &&
+    !leagueError &&
+    (isLoadingLeague || !parlay.isRealDataLoaded);
 
   const currentTeam = teams.find(t => t.roster_id === currentRosterId) || teams[0];
 
@@ -900,33 +941,43 @@ export const App: React.FC = () => {
               <span className="hidden sm:inline">Archive</span>
             </button>
 
-            <button
-              onClick={() => {
-                setAuthSelectedRoster(currentRosterId);
-                setIsAuthModalOpen(true);
-              }}
-              aria-label={`Switch Team: currently authenticated as ${currentTeam.owner_name}`}
-              className="h-9 px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 hover:border-white/25 text-xs font-semibold text-white transition inline-flex items-center space-x-2 active:scale-95 shadow-sm"
-              title="Click to Switch Team / Re-Auth"
-            >
-              <div className="w-5 h-5 rounded-full bg-sleeper-accent/20 text-sleeper-accent text-[10px] font-black flex items-center justify-center shrink-0">
-                {currentTeam.owner_name
-                  ? currentTeam.owner_name
-                      .trim()
-                      .split(/\s+/)
-                      .map((p) => p[0])
-                      .slice(0, 2)
-                      .join('')
-                      .toUpperCase()
-                  : 'U'}
+            {isRealLeagueLoading ? (
+              <div
+                data-testid="header-user-skeleton"
+                className="h-9 px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 animate-pulse flex items-center space-x-2 shrink-0"
+              >
+                <div className="w-5 h-5 rounded-full bg-white/10" />
+                <div className="w-16 sm:w-20 h-3 bg-white/10 rounded" />
               </div>
-              <span className="truncate max-w-[70px] xs:max-w-[100px] sm:max-w-[140px] md:max-w-none font-bold text-white">
-                {currentTeam.owner_name}
-              </span>
-              <span className="hidden sm:inline text-sleeper-muted font-normal">
-                ({currentTeam.team_name})
-              </span>
-            </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setAuthSelectedRoster(currentRosterId);
+                  setIsAuthModalOpen(true);
+                }}
+                aria-label={`Switch Team: currently authenticated as ${currentTeam.owner_name}`}
+                className="h-9 px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 hover:border-white/25 text-xs font-semibold text-white transition inline-flex items-center space-x-2 active:scale-95 shadow-sm"
+                title="Click to Switch Team / Re-Auth"
+              >
+                <div className="w-5 h-5 rounded-full bg-sleeper-accent/20 text-sleeper-accent text-[10px] font-black flex items-center justify-center shrink-0">
+                  {currentTeam.owner_name
+                    ? currentTeam.owner_name
+                        .trim()
+                        .split(/\s+/)
+                        .map((p) => p[0])
+                        .slice(0, 2)
+                        .join('')
+                        .toUpperCase()
+                    : 'U'}
+                </div>
+                <span className="truncate max-w-[70px] xs:max-w-[100px] sm:max-w-[140px] md:max-w-none font-bold text-white">
+                  {currentTeam.owner_name}
+                </span>
+                <span className="hidden sm:inline text-sleeper-muted font-normal">
+                  ({currentTeam.team_name})
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -945,27 +996,33 @@ export const App: React.FC = () => {
             </button>
           </div>
         )}
-        {isLoadingLeague && (
-          <div className="mb-4 p-3 rounded-xl bg-sleeper-card border border-sleeper-border text-xs text-gray-300 flex items-center space-x-2">
-            <span className="animate-spin">⏳</span>
-            <span>Syncing Sleeper league {leagueId}...</span>
-          </div>
-        )}
-        {/* Weekly Bettor Spotlight */}
-        <BettorBanner parlay={parlay} />
+        {isRealLeagueLoading ? (
+          <LeagueSkeleton />
+        ) : (
+          <>
+            {isLoadingLeague && (
+              <div className="mb-4 p-3 rounded-xl bg-sleeper-card border border-sleeper-border text-xs text-gray-300 flex items-center space-x-2">
+                <span className="animate-spin">⏳</span>
+                <span>Syncing Sleeper league {leagueId}...</span>
+              </div>
+            )}
+            {/* Weekly Bettor Spotlight */}
+            <BettorBanner parlay={parlay} />
 
-        {/* Unified Single-Column Parlay Slip */}
-        <ParlayCard
-          parlay={parlay}
-          currentRosterId={currentRosterId}
-          onOpenPickModal={(leg) => {
-            if (leg.roster_id === currentRosterId) {
-              setIsPickOpen(true);
-            }
-          }}
-          oddsFormat={oddsFormat}
-          onToggleOddsFormat={handleToggleOddsFormat}
-        />
+            {/* Unified Single-Column Parlay Slip */}
+            <ParlayCard
+              parlay={parlay}
+              currentRosterId={currentRosterId}
+              onOpenPickModal={(leg) => {
+                if (leg.roster_id === currentRosterId) {
+                  setIsPickOpen(true);
+                }
+              }}
+              oddsFormat={oddsFormat}
+              onToggleOddsFormat={handleToggleOddsFormat}
+            />
+          </>
+        )}
       </main>
 
       {/* Interactive Modals */}
