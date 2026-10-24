@@ -1,4 +1,5 @@
 venv/
+functions/venv
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -7,3 +8,13 @@ dist/
 .firebase/
 firebase-debug.log
 firebase-debug.*.log
+firestore-debug.log
+pubsub-debug.log
+*.key
+*.pem
+.env
+.env.local
+.env.*.local
+functions/.env
+frontend/.env
+functions/secrets/
