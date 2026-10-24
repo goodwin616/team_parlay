@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   saveCachedTeamId,
   getCachedTeamId,
+  clearCachedTeamId,
   parseLeagueIdInput,
   getLeagueIdFromLocation,
   getRecentLeagues,
@@ -30,17 +31,50 @@ describe('Auth & Multi-League URL Service', () => {
   });
 
   describe('Team Cache', () => {
-    it('returns null when no team is cached', () => {
+    it('returns null when no team is cached or uid is missing', () => {
       expect(getCachedTeamId('12345')).toBeNull();
+      expect(getCachedTeamId('12345', 'user_a')).toBeNull();
     });
 
-    it('saves and retrieves cached teamId scoped by leagueId', () => {
-      saveCachedTeamId('league_1', 3);
-      saveCachedTeamId('league_2', 7);
+    it('saves and retrieves cached teamId scoped by user UID and leagueId', () => {
+      saveCachedTeamId('league_1', 3, 'user_a');
+      saveCachedTeamId('league_2', 7, 'user_a');
 
-      expect(getCachedTeamId('league_1')).toBe(3);
-      expect(getCachedTeamId('league_2')).toBe(7);
-      expect(getCachedTeamId('league_3')).toBeNull();
+      expect(getCachedTeamId('league_1', 'user_a')).toBe(3);
+      expect(getCachedTeamId('league_2', 'user_a')).toBe(7);
+      expect(getCachedTeamId('league_3', 'user_a')).toBeNull();
+    });
+
+    it('does not return User A cached team for User B (prevents cross-user pollution)', () => {
+      saveCachedTeamId('league_1', 3, 'user_a');
+      saveCachedTeamId('league_1', 9, 'user_b');
+
+      expect(getCachedTeamId('league_1', 'user_a')).toBe(3);
+      expect(getCachedTeamId('league_1', 'user_b')).toBe(9);
+      expect(getCachedTeamId('league_1', 'user_c')).toBeNull();
+      // Calling without UID returns null
+      expect(getCachedTeamId('league_1')).toBeNull();
+    });
+
+    it('cleans up legacy un-scoped team cache entry', () => {
+      store['tp_team_cache_league_1'] = '5';
+      expect(store['tp_team_cache_league_1']).toBe('5');
+
+      // getCachedTeamId cleans up legacy key
+      const res = getCachedTeamId('league_1', 'user_new');
+      expect(res).toBeNull();
+      expect(store['tp_team_cache_league_1']).toBeUndefined();
+    });
+
+    it('clearCachedTeamId removes the user-scoped key and any legacy key', () => {
+      saveCachedTeamId('league_1', 4, 'user_a');
+      store['tp_team_cache_league_1'] = '99';
+      expect(getCachedTeamId('league_1', 'user_a')).toBe(4);
+
+      clearCachedTeamId('league_1', 'user_a');
+      expect(getCachedTeamId('league_1', 'user_a')).toBeNull();
+      expect(store['tp_team_cache_user_a_league_1']).toBeUndefined();
+      expect(store['tp_team_cache_league_1']).toBeUndefined();
     });
   });
 

@@ -243,7 +243,7 @@ export interface ResolveTeamOptions {
   user: { uid: string } | null;
   teams: TeamProfile[];
   getMyTeamFn?: (params: { league_id: string }) => Promise<{ data: { roster_id: number | null } | null }>;
-  getCachedTeamIdFn?: (leagueId: string) => number | null;
+  getCachedTeamIdFn?: (leagueId: string, uid?: string) => number | null;
 }
 
 export async function resolveUserTeam({
@@ -269,19 +269,19 @@ export async function resolveUserTeam({
     }
   }
 
-  // 2. Check cached team ID in localStorage
-  const cached = getCachedTeamIdFn(leagueId);
+  // 2. Check if any team in loaded list is claimed by user
+  const claimedTeam = teams.find((t) => t.claimed_by && t.claimed_by.uid === user.uid);
+  if (claimedTeam) {
+    return { rosterId: claimedTeam.roster_id, openPicker: false };
+  }
+
+  // 3. Check user-scoped cached team ID in localStorage
+  const cached = getCachedTeamIdFn(leagueId, user.uid);
   if (cached != null) {
     const isValidInTeams = teams.length === 0 || teams.some((t) => t.roster_id === cached);
     if (isValidInTeams) {
       return { rosterId: cached, openPicker: false };
     }
-  }
-
-  // 3. Fallback: Check if any team in loaded list is claimed by user
-  const claimedTeam = teams.find((t) => t.claimed_by && t.claimed_by.uid === user.uid);
-  if (claimedTeam) {
-    return { rosterId: claimedTeam.roster_id, openPicker: false };
   }
 
   // 4. Default: User has no claimed or cached team
@@ -305,6 +305,10 @@ export const App: React.FC = () => {
   const [season, setSeason] = useState<string>(() => String(new Date().getFullYear()));
   const [teams, setTeams] = useState<TeamProfile[]>(MOCK_TEAMS);
   const [currentRosterId, setCurrentRosterId] = useState<number | null>(null);
+  const userRef = useRef(user);
+  userRef.current = user;
+  const currentRosterIdRef = useRef(currentRosterId);
+  currentRosterIdRef.current = currentRosterId;
   const [parlay, setParlay] = useState<WeeklyParlay>(() => {
     if (typeof window !== 'undefined') {
       const initialId = getLeagueIdFromLocation(window.location);
@@ -571,6 +575,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!leagueId || !user) {
       setCurrentRosterId(null);
+      currentRosterIdRef.current = null;
       return;
     }
 
@@ -594,9 +599,11 @@ export const App: React.FC = () => {
 
       if (result.rosterId !== null) {
         setCurrentRosterId(result.rosterId);
-        saveCachedTeamId(leagueId, result.rosterId);
+        currentRosterIdRef.current = result.rosterId;
+        saveCachedTeamId(leagueId, result.rosterId, user.uid);
       } else {
         setCurrentRosterId(null);
+        currentRosterIdRef.current = null;
         if (result.openPicker) {
           setIsTeamPickerOpen(true);
         }
@@ -830,6 +837,15 @@ export const App: React.FC = () => {
             );
           if (!isStaleMock) {
             setTeams(loadedTeams);
+            const currentUser = userRef.current;
+            if (currentUser && currentRosterIdRef.current === null) {
+              const myTeam = loadedTeams.find((t) => t.claimed_by?.uid === currentUser.uid);
+              if (myTeam) {
+                setCurrentRosterId(myTeam.roster_id);
+                currentRosterIdRef.current = myTeam.roster_id;
+                saveCachedTeamId(leagueId, myTeam.roster_id, currentUser.uid);
+              }
+            }
           }
         }
       },
@@ -1145,6 +1161,8 @@ export const App: React.FC = () => {
                         type="button"
                         onClick={async () => {
                           setIsProfileMenuOpen(false);
+                          setCurrentRosterId(null);
+                          currentRosterIdRef.current = null;
                           await signOutUser();
                         }}
                         className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition flex items-center space-x-2 mt-1 cursor-pointer"
@@ -1242,7 +1260,8 @@ export const App: React.FC = () => {
           season={season}
           onTeamSelected={(rosterId, claimedBy) => {
             setCurrentRosterId(rosterId);
-            saveCachedTeamId(leagueId, rosterId);
+            currentRosterIdRef.current = rosterId;
+            saveCachedTeamId(leagueId, rosterId, user?.uid);
             if (claimedBy) {
               setTeams(prev => prev.map(t => t.roster_id === rosterId ? { ...t, claimed_by: claimedBy } : t));
             }

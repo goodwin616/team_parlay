@@ -253,6 +253,24 @@ describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
         expect(result.openPicker).toBe(true);
       });
 
+      it('does NOT return User A cached team for unassigned User B (prevents cross-user pollution)', async () => {
+        const userScopedCache: Record<string, number> = {
+          'user_a': 1,
+        };
+
+        const result = await resolveUserTeam({
+          leagueId: 'test_league',
+          user: { uid: 'user_b' },
+          teams: mockTeams,
+          getMyTeamFn: async () => ({ data: null }),
+          getCachedTeamIdFn: (_leagueId, uid) => (uid ? userScopedCache[uid] ?? null : null),
+        });
+
+        // User B must not inherit User A's team 1!
+        expect(result.rosterId).toBeNull();
+        expect(result.openPicker).toBe(true);
+      });
+
       it('returns server rosterId and openPicker=false when get_my_team returns a claimed team', async () => {
         const result = await resolveUserTeam({
           leagueId: 'test_league',
@@ -266,7 +284,7 @@ describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
         expect(result.openPicker).toBe(false);
       });
 
-      it('returns cached rosterId when stored in client cache and valid in current teams', async () => {
+      it('returns cached rosterId when stored in client cache for the user and valid in current teams', async () => {
         const result = await resolveUserTeam({
           leagueId: 'test_league',
           user: { uid: 'user_1' },
@@ -274,14 +292,14 @@ describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
           getMyTeamFn: async () => {
             throw new Error('Offline');
           },
-          getCachedTeamIdFn: () => 1,
+          getCachedTeamIdFn: (_leagueId, uid) => (uid === 'user_1' ? 1 : null),
         });
 
         expect(result.rosterId).toBe(1);
         expect(result.openPicker).toBe(false);
       });
 
-      it('returns rosterId of claimed team when user matches claimed_by.uid in loaded teams', async () => {
+      it('returns rosterId of claimed team when user matches claimed_by.uid in loaded teams even if cache is empty', async () => {
         const teamsWithClaim: TeamProfile[] = [
           { roster_id: 1, owner_id: 'u1', owner_name: 'Blake', team_name: 'Philly Special' },
           {
@@ -301,6 +319,32 @@ describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
           getCachedTeamIdFn: () => null,
         });
 
+        expect(result.rosterId).toBe(2);
+        expect(result.openPicker).toBe(false);
+      });
+
+      it('prioritizes loaded claimed team over stale cached team', async () => {
+        const teamsWithClaim: TeamProfile[] = [
+          { roster_id: 1, owner_id: 'u1', owner_name: 'Blake', team_name: 'Philly Special' },
+          {
+            roster_id: 2,
+            owner_id: 'u2',
+            owner_name: 'Bob',
+            team_name: 'Gridiron Clowns',
+            claimed_by: { uid: 'user_bob', name: 'Bob B', claimed_at: '2026-10-24T00:00:00Z' },
+          },
+        ];
+
+        const result = await resolveUserTeam({
+          leagueId: 'test_league',
+          user: { uid: 'user_bob' },
+          teams: teamsWithClaim,
+          getMyTeamFn: async () => ({ data: null }),
+          // Stale cache points to roster 1
+          getCachedTeamIdFn: () => 1,
+        });
+
+        // Claimed team check (step 2) must take precedence over cache (step 3)
         expect(result.rosterId).toBe(2);
         expect(result.openPicker).toBe(false);
       });
