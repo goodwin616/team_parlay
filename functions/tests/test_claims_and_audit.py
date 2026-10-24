@@ -503,3 +503,25 @@ def test_init_or_sync_preserves_claimed_by_and_deletes_pin_hash():
     assert "session_tokens" not in team
     # claimed_by preserved
     assert team["claimed_by"]["uid"] == "existing_user_uid"
+
+def test_firebase_admin_default_app_initialized_on_import():
+    import firebase_admin
+    # Ensure default app is initialized so callable auth verification succeeds
+    assert firebase_admin._DEFAULT_APP_NAME in firebase_admin._apps
+    default_app = firebase_admin.get_app()
+    assert default_app is not None
+
+def test_callable_auth_token_verification_with_initialized_app():
+    import firebase_admin
+    from firebase_functions.private.util import _on_call_check_auth_token
+
+    # Ensure default app is present
+    assert firebase_admin._DEFAULT_APP_NAME in firebase_admin._apps
+
+    req = MagicMock()
+    req.headers = {"Authorization": "Bearer test_valid_token"}
+
+    with patch("firebase_admin.auth.verify_id_token", return_value={"uid": "test_user_1", "email": "user@example.com"}):
+        decoded = _on_call_check_auth_token(req)
+        assert decoded == {"uid": "test_user_1", "email": "user@example.com"}
+

@@ -12,6 +12,20 @@ import firebase_admin
 from firebase_admin import firestore
 from firebase_functions import https_fn
 
+# If running in local emulator without explicit project set, default project id
+if (os.environ.get("FIREBASE_AUTH_EMULATOR_HOST") or os.environ.get("FIRESTORE_EMULATOR_HOST")) and not (
+    os.environ.get("GCLOUD_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+):
+    os.environ.setdefault("GCLOUD_PROJECT", "goodwin-team-parlay")
+
+# Initialize default Firebase app on module load so that Callable function
+# auth token verification (_on_call_handler) succeeds before handler execution.
+if not firebase_admin._apps:
+    try:
+        firebase_admin.initialize_app()
+    except Exception:
+        pass
+
 from odds_engine import (
     calculate_earliest_kickoff,
     is_kickoff_passed,
