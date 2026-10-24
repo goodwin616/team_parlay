@@ -150,7 +150,7 @@ describe('CR-004: Mobile Layout & Visual Hierarchy Refinements', () => {
       expect(html).toContain('aria-valuemax="5"');
     });
 
-    it('clarifies payout math with per-player split and active divisor', () => {
+    it('clarifies payout math with per-player split without noisy active divisor', () => {
       const html = cleanText(
         renderToString(
           <ParlayCard
@@ -163,7 +163,7 @@ describe('CR-004: Mobile Layout & Visual Hierarchy Refinements', () => {
       // Total payout: $38.00, Payout / Player: $12.67 ($38 / 3 submitted)
       expect(html).toContain('$38.00');
       expect(html).toContain('$12.67');
-      expect(html).toContain('÷ 3 active');
+      expect(html).not.toContain('÷ 3 active');
     });
 
     it('renders odds toggle switch in the card header', () => {
@@ -215,7 +215,7 @@ describe('CR-004: Mobile Layout & Visual Hierarchy Refinements', () => {
       expect(html).toContain('(Charlie)');
     });
 
-    it('renders interactive Nudge button on pending legs for other players', () => {
+    it('does not render Nudge button on pending legs for other players', () => {
       const html = renderToString(
         <ParlayCard
           parlay={sampleParlay}
@@ -223,9 +223,11 @@ describe('CR-004: Mobile Layout & Visual Hierarchy Refinements', () => {
           onOpenPickModal={() => {}}
         />
       );
-      expect(html).toContain('aria-label="Nudge Charlie to submit pick"');
-      expect(html).toContain('aria-label="Nudge Dave to submit pick"');
-      expect(html).toContain('Nudge');
+      expect(html).not.toContain('aria-label="Nudge Charlie to submit pick"');
+      expect(html).not.toContain('aria-label="Nudge Dave to submit pick"');
+      expect(html).not.toContain('aria-label="Nudge');
+      expect(html).not.toContain('Nudge');
+      expect(html).toContain('Pending');
     });
 
     it('wraps team logos in a circular light/neutral container with subtle border for high contrast', () => {

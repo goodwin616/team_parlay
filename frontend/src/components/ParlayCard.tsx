@@ -8,8 +8,6 @@ import {
   ExternalLink,
   Info,
   PlusCircle,
-  Bell,
-  BellRing,
 } from 'lucide-react';
 import { WeeklyParlay, ParlayLeg } from '../types';
 import { formatOddsWithCents, formatComboOdds, OddsFormat } from '../utils/parlayMath';
@@ -33,22 +31,6 @@ export const ParlayCard: React.FC<Props> = ({
 }) => {
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [showEstimateInfo, setShowEstimateInfo] = useState<boolean>(false);
-  const [nudgedLegs, setNudgedLegs] = useState<Record<string | number, boolean>>({});
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!toastMessage) return;
-    const timer = setTimeout(() => {
-      setToastMessage(null);
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [toastMessage]);
-
-  const handleNudge = (leg: ParlayLeg) => {
-    const key = leg.id || leg.roster_id;
-    setNudgedLegs(prev => ({ ...prev, [key]: true }));
-    setToastMessage(`Nudge sent! Reminded ${leg.owner_name}`);
-  };
 
   // Live countdown to earliest kickoff
   useEffect(() => {
@@ -250,9 +232,6 @@ export const ParlayCard: React.FC<Props> = ({
             <span className="text-sm sm:text-base font-black font-mono text-emerald-400">
               ${payoutPerPlayer.toFixed(2)}
             </span>
-            <span className="text-[10px] text-sleeper-muted font-mono block mt-0.5">
-              ÷ {submittedCount || parlay.legs.length} active
-            </span>
           </div>
         </div>
 
@@ -363,7 +342,7 @@ export const ParlayCard: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Right Column: Odds Badge + Submit/Edit CTA for Current User or Nudge for Pending */}
+              {/* Right Column: Odds Badge + Submit/Edit CTA for Current User or Pending */}
               <div className="shrink-0 flex items-center justify-end space-x-2 pl-3">
                 {isSubmitted ? (
                   <>
@@ -383,58 +362,18 @@ export const ParlayCard: React.FC<Props> = ({
                     <span>Submit Pick</span>
                   </span>
                 ) : (
-                  <div className="flex items-center space-x-1.5">
-                    <span
-                      title="Waiting for member to submit their weekly pick"
-                      className="font-mono text-xs font-semibold px-2 py-1 rounded bg-white/5 text-gray-400"
-                    >
-                      Pending
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleNudge(leg);
-                      }}
-                      aria-label={`Nudge ${leg.owner_name} to submit pick`}
-                      title={`Send a reminder nudge to ${leg.owner_name}`}
-                      className={`px-2 py-1 rounded-lg border text-xs font-bold inline-flex items-center space-x-1 transition active:scale-95 ${
-                        nudgedLegs[leg.id || leg.roster_id]
-                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                          : 'bg-sleeper-dark hover:bg-sleeper-border/50 text-gray-300 hover:text-white border-sleeper-border/70'
-                      }`}
-                    >
-                      {nudgedLegs[leg.id || leg.roster_id] ? (
-                        <>
-                          <BellRing className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
-                          <span>Nudged!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Bell className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Nudge</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+                  <span
+                    title="Waiting for member to submit their weekly pick"
+                    className="font-mono text-xs font-semibold px-2 py-1 rounded bg-white/5 text-gray-400"
+                  >
+                    Pending
+                  </span>
                 )}
               </div>
             </div>
           );
         })}
       </div>
-
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-sleeper-card border border-amber-500/40 text-amber-300 px-4 py-2.5 rounded-xl shadow-2xl flex items-center space-x-2 text-xs font-bold animate-fadeIn"
-        >
-          <BellRing className="w-4 h-4 text-amber-400 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
 
       {/* Sleeper Chat Share Footer */}
       <SleeperChatExport parlay={parlay} />
