@@ -762,3 +762,64 @@ def test_get_kalshi_nfl_markets_cooldown():
             ttl_seconds=300,
         )
 
+
+def test_get_kalshi_client_dynamic_env_without_path(monkeypatch):
+    """
+    Verifies get_kalshi_client() dynamically loads KALSHI_API_KEY_ID and
+    KALSHI_PRIVATE_KEY_PEM from os.environ without requiring KALSHI_PRIVATE_KEY_PATH.
+    Also verifies updates to os.environ are reflected on subsequent calls.
+    """
+    monkeypatch.setenv("KALSHI_API_KEY_ID", "test-api-key-1")
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY_PEM", "-----BEGIN RSA PRIVATE KEY-----\nMIIEfake1\n-----END RSA PRIVATE KEY-----")
+    monkeypatch.delenv("KALSHI_PRIVATE_KEY_PATH", raising=False)
+
+    client1 = main.get_kalshi_client()
+    assert client1.api_key_id == "test-api-key-1"
+    assert client1.private_key_pem == "-----BEGIN RSA PRIVATE KEY-----\nMIIEfake1\n-----END RSA PRIVATE KEY-----"
+    assert client1.private_key_path is None
+    assert client1.is_authenticated is True
+
+    # Rotate credentials in os.environ and confirm dynamic loading
+    monkeypatch.setenv("KALSHI_API_KEY_ID", "rotated-api-key-2")
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY_PEM", "-----BEGIN RSA PRIVATE KEY-----\nMIIEfake2\n-----END RSA PRIVATE KEY-----")
+
+    client2 = main.get_kalshi_client()
+    assert client2.api_key_id == "rotated-api-key-2"
+    assert client2.private_key_pem == "-----BEGIN RSA PRIVATE KEY-----\nMIIEfake2\n-----END RSA PRIVATE KEY-----"
+    assert client2.is_authenticated is True
+
+
+def test_get_kalshi_client_pem_takes_precedence_over_path(monkeypatch):
+    """
+    Verifies that when KALSHI_PRIVATE_KEY_PEM is present, it takes precedence
+    over KALSHI_PRIVATE_KEY_PATH and does not attempt to read key file from disk.
+    """
+    monkeypatch.setenv("KALSHI_API_KEY_ID", "test-api-key")
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY_PEM", "PEM_CREDENTIAL_STRING")
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY_PATH", "/nonexistent/invalid/path/key.pem")
+
+    client = main.get_kalshi_client()
+    assert client.api_key_id == "test-api-key"
+    assert client.private_key_pem == "PEM_CREDENTIAL_STRING"
+    assert client.is_authenticated is True
+
+
+def test_kalshi_secrets_declared_on_cloud_functions():
+    """
+    Verifies KALSHI_SECRETS is declared and passed as secrets configuration
+    to submit_leg and get_kalshi_nfl_markets Cloud Functions.
+    """
+    assert main.KALSHI_SECRETS == ["KALSHI_API_KEY_ID", "KALSHI_PRIVATE_KEY_PEM"]
+    endpoint_submit = getattr(main.submit_leg, "__firebase_endpoint__", None)
+    endpoint_markets = getattr(main.get_kalshi_nfl_markets, "__firebase_endpoint__", None)
+    assert endpoint_submit is not None
+    assert endpoint_markets is not None
+    assert endpoint_submit.secretEnvironmentVariables == [
+        {"key": "KALSHI_API_KEY_ID"},
+        {"key": "KALSHI_PRIVATE_KEY_PEM"},
+    ]
+    assert endpoint_markets.secretEnvironmentVariables == [
+        {"key": "KALSHI_API_KEY_ID"},
+        {"key": "KALSHI_PRIVATE_KEY_PEM"},
+    ]
+

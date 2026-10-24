@@ -47,6 +47,7 @@ from sleeper_sync import (
     determine_weekly_bettor,
 )
 
+KALSHI_SECRETS = ["KALSHI_API_KEY_ID", "KALSHI_PRIVATE_KEY_PEM"]
 KALSHI_API_BASE_URL = os.environ.get("KALSHI_API_BASE_URL", "https://api.elections.kalshi.com/trade-api/v2")
 KALSHI_API_KEY_ID = os.environ.get("KALSHI_API_KEY_ID", "")
 KALSHI_PRIVATE_KEY_PATH = os.environ.get("KALSHI_PRIVATE_KEY_PATH", "")
@@ -82,11 +83,15 @@ def resolve_league_season(db, league_id: str, requested_season: Any = None) -> s
     return get_default_season()
 
 def get_kalshi_client() -> KalshiApiClient:
+    api_key_id = os.environ.get("KALSHI_API_KEY_ID")
+    private_key_pem = os.environ.get("KALSHI_PRIVATE_KEY_PEM")
+    private_key_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH")
+    base_url = os.environ.get("KALSHI_API_BASE_URL", "https://api.elections.kalshi.com/trade-api/v2")
     return KalshiApiClient(
-        base_url=KALSHI_API_BASE_URL,
-        api_key_id=KALSHI_API_KEY_ID or None,
-        private_key_path=KALSHI_PRIVATE_KEY_PATH or None,
-        private_key_pem=KALSHI_PRIVATE_KEY_PEM or None,
+        base_url=base_url,
+        api_key_id=api_key_id or None,
+        private_key_path=private_key_path or None,
+        private_key_pem=private_key_pem or None,
     )
 
 def require_actor(req: https_fn.CallableRequest) -> Dict[str, Any]:
@@ -459,7 +464,7 @@ def get_my_team(req: https_fn.CallableRequest) -> Any:
         "season": doc_data.get("season"),
     }
 
-@https_fn.on_call()
+@https_fn.on_call(secrets=KALSHI_SECRETS)
 def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
     actor = require_actor(req)
 
@@ -581,7 +586,7 @@ def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
     return {"success": True, "legs": updated_legs, "season": season}
 
-@https_fn.on_call()
+@https_fn.on_call(secrets=KALSHI_SECRETS)
 def get_kalshi_nfl_markets(req: https_fn.CallableRequest) -> Dict[str, Any]:
     """
     Fetches live NFL game lines and player props from the Kalshi Trade API v2,
