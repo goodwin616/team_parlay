@@ -396,6 +396,7 @@ def test_submit_leg_by_claimer_and_non_claimer():
                 "description": "New pick by claimer",
                 "odds_american": "-110",
                 "odds_decimal": 1.91,
+                "kickoff_time": "2026-11-01T17:00:00Z",
             },
         },
         uid="user_claimer",
@@ -442,6 +443,7 @@ def test_submit_leg_by_claimer_and_non_claimer():
                 "description": "Override pick by non-claimer",
                 "odds_american": "-110",
                 "odds_decimal": 1.91,
+                "kickoff_time": "2026-11-01T17:00:00Z",
             },
         },
         uid="user_different",
@@ -524,4 +526,239 @@ def test_callable_auth_token_verification_with_initialized_app():
     with patch("firebase_admin.auth.verify_id_token", return_value={"uid": "test_user_1", "email": "user@example.com"}):
         decoded = _on_call_check_auth_token(req)
         assert decoded == {"uid": "test_user_1", "email": "user@example.com"}
+
+
+def test_submit_leg_rejects_passed_kickoff():
+    fake_db = FakeDB()
+    league_id = "test_league"
+    season = "2026"
+    roster_id = 1
+    week = 4
+
+    fake_db.store[f"leagues/{league_id}/seasons/{season}/teams/{roster_id}"] = {
+        "roster_id": roster_id,
+        "team_name": "Philly Special",
+        "owner_name": "Blake",
+        "claimed_by": {"uid": "user_1", "name": "Blake"},
+    }
+    fake_db.store[f"leagues/{league_id}"] = {"active_season": season}
+    fake_db.store[f"leagues/{league_id}/seasons/{season}/parlays/{week}"] = {
+        "week": week,
+        "season": season,
+        "status": "open",
+        "legs": [],
+    }
+
+    # Passed kickoff timestamp
+    req = make_request(
+        data={
+            "league_id": league_id,
+            "season": season,
+            "roster_id": roster_id,
+            "week": week,
+            "leg": {
+                "roster_id": roster_id,
+                "description": "Passed game pick",
+                "odds_american": "-110",
+                "kickoff_time": "2020-01-01T12:00:00Z",
+            },
+        },
+        uid="user_1",
+    )
+
+    with patch("main.get_db", return_value=fake_db):
+        with pytest.raises(https_fn.HttpsError) as exc:
+            call_fn(main.submit_leg, req)
+        assert exc.value.code == https_fn.FunctionsErrorCode.FAILED_PRECONDITION
+        assert "Kickoff has already passed or kickoff time is unverified" in exc.value.message
+
+
+def test_submit_leg_rejects_missing_or_unverified_kickoff():
+    fake_db = FakeDB()
+    league_id = "test_league"
+    season = "2026"
+    roster_id = 1
+    week = 4
+
+    fake_db.store[f"leagues/{league_id}/seasons/{season}/teams/{roster_id}"] = {
+        "roster_id": roster_id,
+        "team_name": "Philly Special",
+        "owner_name": "Blake",
+        "claimed_by": {"uid": "user_1", "name": "Blake"},
+    }
+    fake_db.store[f"leagues/{league_id}"] = {"active_season": season}
+    fake_db.store[f"leagues/{league_id}/seasons/{season}/parlays/{week}"] = {
+        "week": week,
+        "season": season,
+        "status": "open",
+        "legs": [],
+    }
+
+    # Missing kickoff_time and unverified ticker
+    req = make_request(
+        data={
+            "league_id": league_id,
+            "season": season,
+            "roster_id": roster_id,
+            "week": week,
+            "leg": {
+                "roster_id": roster_id,
+                "description": "Unverified pick",
+                "odds_american": "-110",
+            },
+        },
+        uid="user_1",
+    )
+
+    with patch("main.get_db", return_value=fake_db):
+        with pytest.raises(https_fn.HttpsError) as exc:
+            call_fn(main.submit_leg, req)
+        assert exc.value.code == https_fn.FunctionsErrorCode.FAILED_PRECONDITION
+        assert "Kickoff has already passed or kickoff time is unverified" in exc.value.message
+
+
+def test_submit_leg_uses_server_kickoff_and_overrides_falsified_future_timestamp():
+    fake_db = FakeDB()
+    league_id = "test_league"
+    season = "2026"
+    roster_id = 1
+    week = 4
+
+    fake_db.store[f"leagues/{league_id}/seasons/{season}/teams/{roster_id}"] = {
+        "roster_id": roster_id,
+        "team_name": "Philly Special",
+        "owner_name": "Blake",
+        "claimed_by": {"uid": "user_1", "name": "Blake"},
+    }
+    fake_db.store[f"leagues/{league_id}"] = {"active_season": season}
+    fake_db.store[f"leagues/{league_id}/seasons/{season}/parlays/{week}"] = {
+        "week": week,
+        "season": season,
+        "status": "open",
+        "legs": [],
+    }
+
+    # 1. Server knows kickoff was in 2020, but client sends falsified 2099 timestamp
+    with patch("main.get_db", return_value=fake_db), \
+         patch("main.get_market_kickoff_time", return_value="2020-01-01T12:00:00Z"):
+        req_falsified = make_request(
+            data={
+                "league_id": league_id,
+                "season": season,
+                "roster_id": roster_id,
+                "week": week,
+                "leg": {
+                    "roster_id": roster_id,
+                    "kalshi_market_ticker": "KXNFLTD-PASSED",
+                    "description": "Falsified pick",
+                    "odds_american": "-110",
+                    "kickoff_time": "2099-01-01T00:00:00Z",  # Client lie!
+                },
+            },
+            uid="user_1",
+        )
+        with pytest.raises(https_fn.HttpsError) as exc:
+            call_fn(main.submit_leg, req_falsified)
+        assert exc.value.code == https_fn.FunctionsErrorCode.FAILED_PRECONDITION
+        assert "Kickoff has already passed or kickoff time is unverified" in exc.value.message
+
+    # 2. Server knows kickoff is true future date 2026-11-20T18:00:00Z, overrides client
+    with patch("main.get_db", return_value=fake_db), \
+         patch("main.get_market_kickoff_time", return_value="2026-11-20T18:00:00Z"), \
+         patch("main.get_kalshi_client") as mock_kalshi:
+        mock_client = MagicMock()
+        mock_client.fetch_combo_quote.return_value = {
+            "odds_american": "+100",
+            "multiplier": 2.0,
+            "estimated_payout": 10.0,
+            "combined_probability_cents": 50,
+            "contains_sgp": False,
+            "pricing_source": "synthetic",
+        }
+        mock_kalshi.return_value = mock_client
+
+        req_valid = make_request(
+            data={
+                "league_id": league_id,
+                "season": season,
+                "roster_id": roster_id,
+                "week": week,
+                "leg": {
+                    "roster_id": roster_id,
+                    "kalshi_market_ticker": "KXNFLTD-FUTURE",
+                    "description": "Legitimate pick",
+                    "odds_american": "-110",
+                    "kickoff_time": "2099-01-01T00:00:00Z",  # Client provided wrong timestamp
+                },
+            },
+            uid="user_1",
+        )
+        res = call_fn(main.submit_leg, req_valid)
+        assert res["success"] is True
+
+        parlay = fake_db.store[f"leagues/{league_id}/seasons/{season}/parlays/{week}"]
+        saved_leg = parlay["legs"][0]
+        # Must have been overwritten by server_kickoff
+        assert saved_leg["kickoff_time"] == "2026-11-20T18:00:00Z"
+
+
+def test_get_kalshi_nfl_markets_cooldown():
+    fake_db = FakeDB()
+    now_ts = 1000000.0
+
+    # 1. Memory updated 10 seconds ago (< 45s) -> force_refresh ignored, ttl_seconds=300
+    req_force = make_request(data={"force_refresh": True}, uid="user_1")
+    with patch("main.get_db", return_value=fake_db), \
+         patch("time.time", return_value=now_ts), \
+         patch("main.get_board_last_updated_epoch", return_value=now_ts - 10.0), \
+         patch("main.get_kalshi_client") as mock_kalshi:
+        mock_client = MagicMock()
+        mock_client.get_cached_or_fresh_nfl_board.return_value = {
+            "games": [], "props": [], "players": [], "live_market_count": 0, "cached": True
+        }
+        mock_kalshi.return_value = mock_client
+
+        res = call_fn(main.get_kalshi_nfl_markets, req_force)
+        assert res["success"] is True
+        mock_client.get_cached_or_fresh_nfl_board.assert_called_once_with(
+            db=fake_db,
+            ttl_seconds=300,
+        )
+
+    # 2. Last updated 60 seconds ago (> 45s) -> force_refresh honored, ttl_seconds=0
+    with patch("main.get_db", return_value=fake_db), \
+         patch("time.time", return_value=now_ts), \
+         patch("main.get_board_last_updated_epoch", return_value=now_ts - 60.0), \
+         patch("main.get_kalshi_client") as mock_kalshi:
+        mock_client = MagicMock()
+        mock_client.get_cached_or_fresh_nfl_board.return_value = {
+            "games": [], "props": [], "players": [], "live_market_count": 0, "cached": False
+        }
+        mock_kalshi.return_value = mock_client
+
+        res = call_fn(main.get_kalshi_nfl_markets, req_force)
+        assert res["success"] is True
+        mock_client.get_cached_or_fresh_nfl_board.assert_called_once_with(
+            db=fake_db,
+            ttl_seconds=0,
+        )
+
+    # 3. force_refresh is False -> ttl_seconds=300 regardless of last updated
+    req_cached = make_request(data={"force_refresh": False}, uid="user_1")
+    with patch("main.get_db", return_value=fake_db), \
+         patch("time.time", return_value=now_ts), \
+         patch("main.get_board_last_updated_epoch", return_value=now_ts - 100.0), \
+         patch("main.get_kalshi_client") as mock_kalshi:
+        mock_client = MagicMock()
+        mock_client.get_cached_or_fresh_nfl_board.return_value = {
+            "games": [], "props": [], "players": [], "live_market_count": 0, "cached": True
+        }
+        mock_kalshi.return_value = mock_client
+
+        res = call_fn(main.get_kalshi_nfl_markets, req_cached)
+        assert res["success"] is True
+        mock_client.get_cached_or_fresh_nfl_board.assert_called_once_with(
+            db=fake_db,
+            ttl_seconds=300,
+        )
 

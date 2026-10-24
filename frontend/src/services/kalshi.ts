@@ -547,7 +547,7 @@ export async function fetchDirectKalshiNflBoard(
 
       const fetchSeries = async (series: string): Promise<any[]> => {
         const baseUrls = [
-          '/kalshi-api/markets',
+          ...(import.meta.env.DEV ? ['/kalshi-api/markets'] : []),
           'https://api.elections.kalshi.com/trade-api/v2/markets',
         ];
         for (const baseUrl of baseUrls) {

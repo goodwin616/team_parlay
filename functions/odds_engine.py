@@ -1168,3 +1168,116 @@ def is_kickoff_passed(kickoff_time_iso: Optional[str], current_time_iso: Optiona
     else:
         now = datetime.now(timezone.utc)
     return now >= kickoff
+
+
+def get_board_last_updated_epoch(db: Any = None) -> float:
+    """
+    Returns the most recent epoch timestamp when the Kalshi NFL board was updated,
+    checking memory cache and optionally Firestore.
+    """
+    now_ts = time.time()
+    mem_ts = float(_BOARD_MEMORY_CACHE.get("timestamp") or 0.0)
+    if (now_ts - mem_ts) < 45.0:
+        return mem_ts
+    if db is not None:
+        try:
+            meta_ref = db.collection("kalshi_cache").document("nfl_board_meta")
+            meta_doc = meta_ref.get()
+            if meta_doc.exists:
+                meta = meta_doc.to_dict() or {}
+                fs_ts = float(meta.get("updated_at_epoch") or 0.0)
+                return max(mem_ts, fs_ts)
+        except Exception:
+            pass
+    return mem_ts
+
+
+def get_market_kickoff_time(ticker_or_game_id: Optional[str], db: Any = None) -> Optional[str]:
+    """
+    Checks memory cache or Firestore cached board for the market's true kickoff time
+    (either via kalshi_market_ticker in props or game_id in games).
+    """
+    if not ticker_or_game_id:
+        return None
+
+    target = str(ticker_or_game_id).strip()
+    if not target:
+        return None
+
+    def _search_board_dict(board_data: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not board_data or not isinstance(board_data, dict):
+            return None
+
+        # 1. Check props by ticker or kalshi_market_ticker
+        for p in board_data.get("props", []):
+            if not isinstance(p, dict):
+                continue
+            if p.get("ticker") == target or p.get("kalshi_market_ticker") == target:
+                kt = p.get("kickoff_time")
+                if kt:
+                    return kt
+
+        # 2. Check games by game_id or child market tickers
+        for g in board_data.get("games", []):
+            if not isinstance(g, dict):
+                continue
+            if g.get("game_id") == target or g.get("event_ticker") == target:
+                kt = g.get("commence_time") or g.get("kickoff_time")
+                if kt:
+                    return kt
+            for line_key in ("spread_home", "spread_away", "ml_home", "ml_away", "total_over", "total_under"):
+                line = g.get(line_key)
+                if isinstance(line, dict) and line.get("market_ticker") == target:
+                    kt = g.get("commence_time") or g.get("kickoff_time")
+                    if kt:
+                        return kt
+            # In unformatted games (parse_kalshi_game_markets)
+            for sub_key in ("spread", "moneyline", "total"):
+                sub_dict = g.get(sub_key)
+                if isinstance(sub_dict, dict):
+                    for sub_val in sub_dict.values():
+                        if sub_val == target:
+                            kt = g.get("commence_time") or g.get("kickoff_time")
+                            if kt:
+                                return kt
+
+        # 3. Check props by game_id fallback
+        for p in board_data.get("props", []):
+            if not isinstance(p, dict):
+                continue
+            if p.get("game_id") == target:
+                kt = p.get("kickoff_time")
+                if kt:
+                    return kt
+
+        return None
+
+    # 1. Check memory cache
+    cached_board = _BOARD_MEMORY_CACHE.get("board")
+    found = _search_board_dict(cached_board)
+    if found:
+        return found
+
+    # 2. Check Firestore cache if db provided
+    if db is not None:
+        try:
+            meta_ref = db.collection("kalshi_cache").document("nfl_board_meta")
+            meta_doc = meta_ref.get()
+            if meta_doc.exists:
+                meta = meta_doc.to_dict() or {}
+                found = _search_board_dict(meta)
+                if found:
+                    return found
+
+                chunk_count = int(meta.get("chunk_count") or 0)
+                for idx in range(chunk_count):
+                    c_doc = meta_ref.collection("prop_chunks").document(str(idx)).get()
+                    if c_doc.exists:
+                        c_data = c_doc.to_dict() or {}
+                        found = _search_board_dict({"props": c_data.get("items", [])})
+                        if found:
+                            return found
+        except Exception as e:
+            logger.warning(f"Error checking Firestore cache in get_market_kickoff_time: {e}")
+
+    return None

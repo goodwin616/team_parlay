@@ -3,6 +3,9 @@ from unittest.mock import patch, MagicMock
 from odds_engine import (
     calculate_earliest_kickoff,
     is_kickoff_passed,
+    get_market_kickoff_time,
+    get_board_last_updated_epoch,
+    _BOARD_MEMORY_CACHE,
     KalshiApiClient,
     parse_kalshi_game_markets,
     parse_kalshi_prop_market,
@@ -348,4 +351,122 @@ def test_rfq_combo_quote_integration():
         # Verify RFQ was strictly deleted for cleanup
         mock_delete.assert_called_once()
         assert "test-rfq-uuid" in mock_delete.call_args[0][0]
+
+
+def test_get_market_kickoff_time_memory():
+    # Setup sample board in memory cache
+    sample_board = {
+        "games": [
+            {
+                "game_id": "KXNFL-26OCT29-KCBAL",
+                "commence_time": "2026-10-29T20:15:00Z",
+                "ml_home": {
+                    "market_ticker": "KXNFLGAME-26OCT29-KCBAL-KC",
+                },
+                "spread_home": {
+                    "market_ticker": "KXNFLSPREAD-26OCT29-KCBAL-KC3",
+                },
+            }
+        ],
+        "props": [
+            {
+                "ticker": "KXNFLTD-26OCT29-TRAVISKELCE-1",
+                "kalshi_market_ticker": "KXNFLTD-26OCT29-TRAVISKELCE-1",
+                "game_id": "KXNFL-26OCT29-KCBAL",
+                "kickoff_time": "2026-10-29T20:15:00Z",
+            }
+        ],
+    }
+
+    original_board = _BOARD_MEMORY_CACHE.get("board")
+    try:
+        _BOARD_MEMORY_CACHE["board"] = sample_board
+
+        # 1. Look up prop by ticker
+        assert get_market_kickoff_time("KXNFLTD-26OCT29-TRAVISKELCE-1") == "2026-10-29T20:15:00Z"
+
+        # 2. Look up game by game_id
+        assert get_market_kickoff_time("KXNFL-26OCT29-KCBAL") == "2026-10-29T20:15:00Z"
+
+        # 3. Look up game line by market_ticker
+        assert get_market_kickoff_time("KXNFLGAME-26OCT29-KCBAL-KC") == "2026-10-29T20:15:00Z"
+        assert get_market_kickoff_time("KXNFLSPREAD-26OCT29-KCBAL-KC3") == "2026-10-29T20:15:00Z"
+
+        # 4. Unknown ticker returns None
+        assert get_market_kickoff_time("UNKNOWN-TICKER") is None
+        assert get_market_kickoff_time(None) is None
+        assert get_market_kickoff_time("") is None
+    finally:
+        _BOARD_MEMORY_CACHE["board"] = original_board
+
+
+def test_get_market_kickoff_time_firestore():
+    original_board = _BOARD_MEMORY_CACHE.get("board")
+    try:
+        _BOARD_MEMORY_CACHE["board"] = None
+
+        mock_db = MagicMock()
+        mock_meta_ref = MagicMock()
+        mock_db.collection.return_value.document.return_value = mock_meta_ref
+
+        # Mock meta doc containing games
+        mock_meta_doc = MagicMock()
+        mock_meta_doc.exists = True
+        mock_meta_doc.to_dict.return_value = {
+            "games": [
+                {
+                    "game_id": "KXNFL-26NOV01-PHIDAL",
+                    "commence_time": "2026-11-01T17:00:00Z",
+                }
+            ],
+            "chunk_count": 1,
+        }
+        mock_meta_ref.get.return_value = mock_meta_doc
+
+        # Mock prop chunk
+        mock_chunk_doc = MagicMock()
+        mock_chunk_doc.exists = True
+        mock_chunk_doc.to_dict.return_value = {
+            "items": [
+                {
+                    "ticker": "KXNFLTD-26NOV01-SAQUON-1",
+                    "kickoff_time": "2026-11-01T17:00:00Z",
+                }
+            ]
+        }
+        mock_meta_ref.collection.return_value.document.return_value.get.return_value = mock_chunk_doc
+
+        # Test finding game via Firestore
+        assert get_market_kickoff_time("KXNFL-26NOV01-PHIDAL", db=mock_db) == "2026-11-01T17:00:00Z"
+
+        # Test finding prop via prop_chunks in Firestore
+        assert get_market_kickoff_time("KXNFLTD-26NOV01-SAQUON-1", db=mock_db) == "2026-11-01T17:00:00Z"
+
+        # Test not found
+        assert get_market_kickoff_time("NOT_EXISTING", db=mock_db) is None
+    finally:
+        _BOARD_MEMORY_CACHE["board"] = original_board
+
+
+def test_get_board_last_updated_epoch():
+    orig_ts = _BOARD_MEMORY_CACHE.get("timestamp")
+    try:
+        # Case 1: memory cache has recent timestamp
+        _BOARD_MEMORY_CACHE["timestamp"] = 2000.0
+        with patch("time.time", return_value=2010.0):  # 10s difference (< 45s)
+            assert get_board_last_updated_epoch(db=None) == 2000.0
+
+        # Case 2: memory cache is old, Firestore is checked
+        _BOARD_MEMORY_CACHE["timestamp"] = 1000.0
+        mock_db = MagicMock()
+        mock_meta_doc = MagicMock()
+        mock_meta_doc.exists = True
+        mock_meta_doc.to_dict.return_value = {"updated_at_epoch": 2020.0}
+        mock_db.collection.return_value.document.return_value.get.return_value = mock_meta_doc
+
+        with patch("time.time", return_value=2050.0):  # now - mem = 1050 > 45s
+            ts = get_board_last_updated_epoch(db=mock_db)
+            assert ts == 2020.0
+    finally:
+        _BOARD_MEMORY_CACHE["timestamp"] = orig_ts
 

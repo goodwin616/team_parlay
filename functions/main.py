@@ -26,9 +26,12 @@ if not firebase_admin._apps:
     except Exception:
         pass
 
+import time
 from odds_engine import (
     calculate_earliest_kickoff,
     is_kickoff_passed,
+    get_market_kickoff_time,
+    get_board_last_updated_epoch,
     KalshiApiClient,
 )
 from auth_utils import (
@@ -502,11 +505,17 @@ def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
     if parlay_data.get("status") == "locked":
         raise https_fn.HttpsError(code=https_fn.FunctionsErrorCode.FAILED_PRECONDITION, message="Parlay ticket is locked")
 
-    if is_kickoff_passed(leg.get("kickoff_time")):
+    server_kickoff = get_market_kickoff_time(
+        leg.get("kalshi_market_ticker") or leg.get("game_id"),
+        db=db,
+    )
+    effective_kickoff = server_kickoff or leg.get("kickoff_time")
+    if not effective_kickoff or is_kickoff_passed(effective_kickoff):
         raise https_fn.HttpsError(
             code=https_fn.FunctionsErrorCode.FAILED_PRECONDITION,
-            message="Kickoff has already passed for this market"
+            message="Kickoff has already passed or kickoff time is unverified",
         )
+    leg["kickoff_time"] = effective_kickoff
 
     legs = parlay_data.get("legs", [])
     updated_legs = []
@@ -584,6 +593,14 @@ def get_kalshi_nfl_markets(req: https_fn.CallableRequest) -> Dict[str, Any]:
     data = req.data or {}
     force_refresh = bool(data.get("force_refresh", False))
     db = get_db()
+
+    # Enforce a 45-second cooldown on force_refresh to protect Kalshi API rate limits
+    if force_refresh:
+        now_ts = time.time()
+        last_updated = get_board_last_updated_epoch(db=db)
+        if (now_ts - last_updated) < 45.0:
+            force_refresh = False
+
     kalshi_client = get_kalshi_client()
     board = kalshi_client.get_cached_or_fresh_nfl_board(
         db=db,
