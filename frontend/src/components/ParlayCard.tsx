@@ -31,6 +31,16 @@ export const ParlayCard: React.FC<Props> = ({
 }) => {
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [showEstimateInfo, setShowEstimateInfo] = useState<boolean>(false);
+  const [hasMounted, setHasMounted] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof requestAnimationFrame !== 'undefined') {
+      const frame = requestAnimationFrame(() => setHasMounted(true));
+      return () => cancelAnimationFrame(frame);
+    } else {
+      setHasMounted(true);
+    }
+  }, []);
 
   // Live countdown to earliest kickoff
   useEffect(() => {
@@ -175,7 +185,9 @@ export const ParlayCard: React.FC<Props> = ({
           </div>
           <div className="w-full bg-sleeper-dark/90 rounded-full h-2 overflow-hidden border border-white/5">
             <div
-              className="bg-gradient-to-r from-sleeper-accent to-emerald-400 h-full rounded-full transition-all duration-500 ease-out"
+              className={`bg-gradient-to-r from-sleeper-accent to-emerald-400 h-full rounded-full ${
+                hasMounted ? 'transition-[width] duration-500 ease-out' : 'transition-none'
+              }`}
               style={{
                 width: `${Math.min(
                   100,

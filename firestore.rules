@@ -1,9 +1,98 @@
 rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: leagues
+// Document ID: {leagueId}
+//   - Root metadata for a Sleeper league (name, season, total_rosters, status).
+//
+// Subcollection: leagues/{leagueId}/seasons
+// Document ID: {season}
+//   - Season-level metadata and tracking.
+//
+// Subcollection: leagues/{leagueId}/seasons/{season}/teams
+// Document ID: {teamId}
+//   - Roster data, owner information, weekly picks, and default picks.
+//
+// Subcollection: leagues/{leagueId}/seasons/{season}/parlays
+// Document ID: {parlayId}
+//   - Weekly parlay cards, individual bet legs, odds, and settlement status.
+//
+// Subcollection: leagues/{leagueId}/seasons/{season}/audit_log
+// Document ID: {document=**}
+//   - Administrative audit log records (Server/Admin SDK only).
+//
+// Collection: users
+// Document ID: {uid}
+//   - User account data and preferences.
+//
+// Subcollection: users/{uid}/{subpath=**}
+//   - User-specific private subcollections.
+//
+// ===============================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // -------------------------------------------------------------
+    // Helper Functions
+    // -------------------------------------------------------------
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // -------------------------------------------------------------
+    // Global Default: Deny all read and write to unspecified paths
+    // -------------------------------------------------------------
     match /{document=**} {
-      allow read: if true;
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Leagues and Season Subcollections
+    // -------------------------------------------------------------
+    match /leagues/{leagueId} {
+      allow read: if isAuthenticated();
       allow write: if false;
+
+      match /seasons/{season} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+
+        match /teams/{teamId} {
+          allow read: if isAuthenticated();
+          allow write: if false;
+        }
+
+        match /parlays/{parlayId} {
+          allow read: if isAuthenticated();
+          allow write: if false;
+        }
+
+        // Audit log: Server-only (Admin SDK / Firebase Console). Deny all client access.
+        match /audit_log/{document=**} {
+          allow read, write: if false;
+        }
+      }
+    }
+
+    // -------------------------------------------------------------
+    // User Profiles & Private Subcollections
+    // -------------------------------------------------------------
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+
+      match /{subpath=**} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
     }
   }
 }

@@ -148,6 +148,8 @@ describe('CR-004: Mobile Layout & Visual Hierarchy Refinements', () => {
       expect(html).toContain('role="progressbar"');
       expect(html).toContain('aria-valuenow="3"');
       expect(html).toContain('aria-valuemax="5"');
+      expect(html).toContain('transition-none');
+      expect(html).not.toContain('transition-all');
     });
 
     it('clarifies payout math with per-player split without noisy active divisor', () => {
