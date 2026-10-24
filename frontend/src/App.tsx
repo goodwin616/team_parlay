@@ -238,6 +238,49 @@ const MOCK_PAST_PARLAYS: WeeklyParlay[] = [
   },
 ];
 
+export interface SyncFirestoreTeamsOptions {
+  snapshotDocs: Array<{ data: () => any }>;
+  isDemo: boolean;
+  currentUser: { uid: string } | null;
+  currentRosterId: number | null;
+  setTeams: (teams: TeamProfile[]) => void;
+  setCurrentRosterId: (rosterId: number) => void;
+  saveCachedTeamIdFn?: (leagueId: string, rosterId: number, uid: string) => void;
+  leagueId: string;
+}
+
+export function handleTeamsSnapshot({
+  snapshotDocs,
+  isDemo,
+  currentUser,
+  currentRosterId,
+  setTeams,
+  setCurrentRosterId,
+  saveCachedTeamIdFn = saveCachedTeamId,
+  leagueId,
+}: SyncFirestoreTeamsOptions): boolean {
+  if (!snapshotDocs || snapshotDocs.length === 0) return false;
+  const loadedTeams = snapshotDocs
+    .map((d) => d.data() as TeamProfile)
+    .sort((a, b) => a.roster_id - b.roster_id);
+  const isStaleMock =
+    !isDemo &&
+    loadedTeams.some(
+      (t) => t.owner_name === 'Alex' && t.team_name === 'Gridiron Gladiators'
+    );
+  if (isStaleMock) return false;
+
+  setTeams(loadedTeams);
+  if (currentUser && currentRosterId === null) {
+    const myTeam = loadedTeams.find((t) => t.claimed_by?.uid === currentUser.uid);
+    if (myTeam) {
+      setCurrentRosterId(myTeam.roster_id);
+      saveCachedTeamIdFn(leagueId, myTeam.roster_id, currentUser.uid);
+    }
+  }
+  return true;
+}
+
 export interface ResolveTeamOptions {
   leagueId: string;
   user: { uid: string } | null;
@@ -787,6 +830,7 @@ export const App: React.FC = () => {
       }
     };
 
+    const authKey = user?.uid || 'anon';
     const leagueDocRef = doc(db, 'leagues', leagueId);
     const unsubLeague = onSnapshot(
       leagueDocRef,
@@ -794,8 +838,9 @@ export const App: React.FC = () => {
         if (snap.exists()) {
           const data = snap.data();
           if (!isDemo && data?.source !== 'sleeper') {
-            if (syncedLeagueRef.current !== `${leagueId}_force`) {
-              syncedLeagueRef.current = `${leagueId}_force`;
+            const forceKey = `${leagueId}_force_${authKey}`;
+            if (syncedLeagueRef.current !== forceKey) {
+              syncedLeagueRef.current = forceKey;
               syncRealSleeperLeague(true);
             }
             return;
@@ -809,15 +854,17 @@ export const App: React.FC = () => {
           setRecentLeagues(getRecentLeagues());
           setIsLoadingLeague(false);
         } else if (!isDemo) {
-          if (syncedLeagueRef.current !== leagueId) {
-            syncedLeagueRef.current = leagueId;
+          const leagueKey = `${leagueId}_${authKey}`;
+          if (syncedLeagueRef.current !== leagueKey) {
+            syncedLeagueRef.current = leagueKey;
             syncRealSleeperLeague(false);
           }
         }
       },
       () => {
-        if (!isDemo && syncedLeagueRef.current !== leagueId) {
-          syncedLeagueRef.current = leagueId;
+        const leagueKey = `${leagueId}_${authKey}`;
+        if (!isDemo && syncedLeagueRef.current !== leagueKey) {
+          syncedLeagueRef.current = leagueKey;
           syncRealSleeperLeague(false);
         }
       }
@@ -827,26 +874,21 @@ export const App: React.FC = () => {
       collection(db, 'leagues', leagueId, 'seasons', season, 'teams'),
       (snapshot) => {
         if (!snapshot.empty) {
-          const loadedTeams = snapshot.docs
-            .map(d => d.data() as TeamProfile)
-            .sort((a, b) => a.roster_id - b.roster_id);
-          const isStaleMock =
-            !isDemo &&
-            loadedTeams.some(
-              (t) => t.owner_name === 'Alex' && t.team_name === 'Gridiron Gladiators'
-            );
-          if (!isStaleMock) {
-            setTeams(loadedTeams);
-            const currentUser = userRef.current;
-            if (currentUser && currentRosterIdRef.current === null) {
-              const myTeam = loadedTeams.find((t) => t.claimed_by?.uid === currentUser.uid);
-              if (myTeam) {
-                setCurrentRosterId(myTeam.roster_id);
-                currentRosterIdRef.current = myTeam.roster_id;
-                saveCachedTeamId(leagueId, myTeam.roster_id, currentUser.uid);
-              }
-            }
-          }
+          const currentUser = user || userRef.current;
+          const currentId = currentRosterId ?? currentRosterIdRef.current;
+          handleTeamsSnapshot({
+            snapshotDocs: snapshot.docs,
+            isDemo,
+            currentUser,
+            currentRosterId: currentId,
+            setTeams,
+            setCurrentRosterId: (rid) => {
+              setCurrentRosterId(rid);
+              currentRosterIdRef.current = rid;
+            },
+            saveCachedTeamIdFn: saveCachedTeamId,
+            leagueId,
+          });
         }
       },
       () => {}
@@ -856,8 +898,10 @@ export const App: React.FC = () => {
       collection(db, 'leagues', leagueId, 'seasons', season, 'parlays'),
       async (snapshot) => {
         if (snapshot.empty) {
-          if (isDemo && syncedLeagueRef.current !== `demo_${season}`) {
-            syncedLeagueRef.current = `demo_${season}`;
+          const demoKey = `demo_${season}_${authKey}`;
+          const parlaySyncKey = `${leagueId}_${season}_${authKey}`;
+          if (isDemo && syncedLeagueRef.current !== demoKey) {
+            syncedLeagueRef.current = demoKey;
             try {
               const initFn = httpsCallable(functions, 'init_or_sync_league');
               await initFn({
@@ -869,8 +913,8 @@ export const App: React.FC = () => {
             } catch {
               // Ignore if emulator offline
             }
-          } else if (!isDemo && syncedLeagueRef.current !== `${leagueId}_${season}`) {
-            syncedLeagueRef.current = `${leagueId}_${season}`;
+          } else if (!isDemo && syncedLeagueRef.current !== parlaySyncKey) {
+            syncedLeagueRef.current = parlaySyncKey;
             syncRealSleeperLeague(false);
           }
           return;
@@ -904,7 +948,7 @@ export const App: React.FC = () => {
       unsubTeams();
       unsubParlays();
     };
-  }, [leagueId, season]);
+  }, [leagueId, season, user?.uid]);
 
   // Render Landing Page if no leagueId in URL
   if (!leagueId) {

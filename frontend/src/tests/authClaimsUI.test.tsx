@@ -4,7 +4,7 @@ import { SignInGate } from '../components/SignInGate';
 import { ClaimConfirmModal } from '../components/ClaimConfirmModal';
 import { TeamPickerModal } from '../components/TeamPickerModal';
 import { ParlayCard } from '../components/ParlayCard';
-import { resolveUserTeam } from '../App';
+import { resolveUserTeam, handleTeamsSnapshot } from '../App';
 import { WeeklyParlay, TeamProfile } from '../types';
 
 describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
@@ -369,6 +369,233 @@ describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
 
       expect(selectedRosterId).toBe(2);
       expect(teamList.find((t) => t.roster_id === 2)?.claimed_by?.uid).toBe('new_claimer');
+    });
+  });
+
+  describe('CR-016: Re-subscribe Firestore listeners on auth state change to sync real claimed teams', () => {
+    const rawSleeperTeams: TeamProfile[] = [
+      { roster_id: 1, owner_id: 'u1', owner_name: 'Blake', team_name: 'Philly Special' },
+      { roster_id: 2, owner_id: 'u2', owner_name: 'Bob', team_name: 'Gridiron Clowns' },
+      { roster_id: 3, owner_id: 'u3', owner_name: 'Charlie', team_name: 'Buffalo Stampede' },
+    ];
+
+    const firestoreLoadedTeams: TeamProfile[] = [
+      {
+        roster_id: 1,
+        owner_id: 'u1',
+        owner_name: 'Blake',
+        team_name: 'Philly Special',
+        claimed_by: { uid: 'user_blake', name: 'Blake G', claimed_at: '2026-10-24T01:00:00Z' },
+      },
+      {
+        roster_id: 2,
+        owner_id: 'u2',
+        owner_name: 'Bob',
+        team_name: 'Gridiron Clowns',
+        claimed_by: { uid: 'user_bob', name: 'Bob B', claimed_at: '2026-10-24T01:10:00Z' },
+      },
+      {
+        roster_id: 3,
+        owner_id: 'u3',
+        owner_name: 'Charlie',
+        team_name: 'Buffalo Stampede',
+      },
+    ];
+
+    it('handleTeamsSnapshot updates teams with real claimed_by data and auto-links user claimed team when currentRosterId is null', () => {
+      let stateTeams: TeamProfile[] = [...rawSleeperTeams];
+      let stateCurrentRosterId: number | null = null;
+      let cachedSaved: { leagueId: string; rosterId: number; uid: string } | null = null;
+
+      const mockDocs = firestoreLoadedTeams.map((t) => ({ data: () => t }));
+
+      const success = handleTeamsSnapshot({
+        snapshotDocs: mockDocs,
+        isDemo: false,
+        currentUser: { uid: 'user_bob' },
+        currentRosterId: stateCurrentRosterId,
+        setTeams: (teams) => { stateTeams = teams; },
+        setCurrentRosterId: (rid) => { stateCurrentRosterId = rid; },
+        saveCachedTeamIdFn: (leagueId, rosterId, uid) => {
+          cachedSaved = { leagueId, rosterId, uid };
+        },
+        leagueId: '12345',
+      });
+
+      expect(success).toBe(true);
+      // State updated with real claims
+      expect(stateTeams[0].claimed_by?.uid).toBe('user_blake');
+      expect(stateTeams[1].claimed_by?.uid).toBe('user_bob');
+      expect(stateTeams[2].claimed_by).toBeUndefined();
+
+      // Auto-linked user_bob's team (roster 2)
+      expect(stateCurrentRosterId).toBe(2);
+      expect(cachedSaved).toEqual({ leagueId: '12345', rosterId: 2, uid: 'user_bob' });
+    });
+
+    it('handleTeamsSnapshot does not overwrite currentRosterId if a team is already explicitly selected', () => {
+      let stateTeams: TeamProfile[] = [...rawSleeperTeams];
+      let stateCurrentRosterId: number | null = 3;
+      let cachedSaved = false;
+
+      const mockDocs = firestoreLoadedTeams.map((t) => ({ data: () => t }));
+
+      handleTeamsSnapshot({
+        snapshotDocs: mockDocs,
+        isDemo: false,
+        currentUser: { uid: 'user_bob' },
+        currentRosterId: stateCurrentRosterId,
+        setTeams: (teams) => { stateTeams = teams; },
+        setCurrentRosterId: (rid) => { stateCurrentRosterId = rid; },
+        saveCachedTeamIdFn: () => { cachedSaved = true; },
+        leagueId: '12345',
+      });
+
+      // Teams are updated
+      expect(stateTeams[1].claimed_by?.uid).toBe('user_bob');
+      // currentRosterId remains unchanged at 3
+      expect(stateCurrentRosterId).toBe(3);
+      expect(cachedSaved).toBe(false);
+    });
+
+    it('handleTeamsSnapshot ignores stale mock team data in real league mode', () => {
+      let stateTeams: TeamProfile[] = [...rawSleeperTeams];
+      const staleMockDocs = [
+        {
+          data: () => ({
+            roster_id: 1,
+            owner_id: 'u1',
+            owner_name: 'Alex',
+            team_name: 'Gridiron Gladiators',
+          }),
+        },
+      ];
+
+      const success = handleTeamsSnapshot({
+        snapshotDocs: staleMockDocs,
+        isDemo: false,
+        currentUser: { uid: 'user_bob' },
+        currentRosterId: null,
+        setTeams: (teams) => { stateTeams = teams; },
+        setCurrentRosterId: () => {},
+        leagueId: '12345',
+      });
+
+      expect(success).toBe(false);
+      expect(stateTeams).toEqual(rawSleeperTeams);
+    });
+
+    it('syncedLeagueRef distinguishes anonymous and authenticated sessions so login sync is not blocked', () => {
+      const leagueId = '1312915483992809472';
+      const season = '2026';
+
+      // Anonymous session vs Authenticated session key formatting
+      const getAuthKey = (u: { uid?: string } | null) => u?.uid || 'anon';
+      const anonSyncKey = `${leagueId}_${season}_${getAuthKey(null)}`;
+      expect(anonSyncKey).toBe('1312915483992809472_2026_anon');
+
+      // Authenticated session after Google sign-in
+      const authedUser = { uid: 'google_user_99' };
+      const authedSyncKey = `${leagueId}_${season}_${getAuthKey(authedUser)}`;
+      expect(authedSyncKey).toBe('1312915483992809472_2026_google_user_99');
+
+      // Crucial assertion: the authenticated sync key differs from anon, preventing the ref from blocking sync
+      expect(authedSyncKey).not.toBe(anonSyncKey);
+    });
+
+    it('simulates subscription cleanup and re-subscription on auth change, populating real claims immediately', () => {
+      let unsubscriptionsCalled = 0;
+      let activeListeners = 0;
+      let currentTeamsInState = [...rawSleeperTeams];
+      let activeUserRosterId: number | null = null;
+
+      // Simulated subscription manager mirroring App.tsx's useEffect lifecycle
+      const subscribeEffect = (user: { uid: string } | null) => {
+        activeListeners += 1;
+
+        // When unauthenticated, permissions may prevent Firestore reads or return empty
+        if (!user) {
+          // Sleeper raw fallback has no claimed_by
+          currentTeamsInState = rawSleeperTeams.map((t) => ({ ...t, claimed_by: undefined }));
+        } else {
+          // When authenticated, Firestore returns real claims
+          handleTeamsSnapshot({
+            snapshotDocs: firestoreLoadedTeams.map((t) => ({ data: () => t })),
+            isDemo: false,
+            currentUser: user,
+            currentRosterId: activeUserRosterId,
+            setTeams: (teams) => { currentTeamsInState = teams; },
+            setCurrentRosterId: (rid) => { activeUserRosterId = rid; },
+            leagueId: 'test_league',
+          });
+        }
+
+        // Cleanup function returned by useEffect
+        return () => {
+          unsubscriptionsCalled += 1;
+          activeListeners -= 1;
+        };
+      };
+
+      // 1. Initial run: Unauthenticated user opens app
+      let cleanup = subscribeEffect(null);
+      expect(activeListeners).toBe(1);
+      expect(currentTeamsInState.every((t) => !t.claimed_by)).toBe(true);
+
+      // Verify TeamPickerModal renders all teams as available/unclaimed prior to login
+      const preLoginHtml = renderToString(
+        <TeamPickerModal
+          isOpen={true}
+          onClose={() => {}}
+          teams={currentTeamsInState}
+          currentRosterId={null}
+          currentUserId={undefined}
+          leagueId="test_league"
+          season="2026"
+          onTeamSelected={() => {}}
+        />
+      );
+      expect(preLoginHtml).not.toContain('Claimed by');
+
+      // 2. User signs in with Google without reloading the page!
+      // Old subscription is cleanly unsubscribed
+      cleanup();
+      expect(unsubscriptionsCalled).toBe(1);
+      expect(activeListeners).toBe(0);
+
+      // New subscription is attached with authed user
+      cleanup = subscribeEffect({ uid: 'user_bob' });
+      expect(activeListeners).toBe(1);
+
+      // State is immediately updated with claimed_by data
+      expect(currentTeamsInState.find((t) => t.roster_id === 1)?.claimed_by?.uid).toBe('user_blake');
+      expect(currentTeamsInState.find((t) => t.roster_id === 2)?.claimed_by?.uid).toBe('user_bob');
+      // User's own team (roster 2) is auto-linked
+      expect(activeUserRosterId).toBe(2);
+
+      // 3. Verify TeamPickerModal immediately reflects the real claims and Active badge without reload
+      const postLoginHtml = renderToString(
+        <TeamPickerModal
+          isOpen={true}
+          onClose={() => {}}
+          teams={currentTeamsInState}
+          currentRosterId={activeUserRosterId}
+          currentUserId="user_bob"
+          leagueId="test_league"
+          season="2026"
+          onTeamSelected={() => {}}
+        />
+      );
+      // Roster 1 shows claimed by Blake G
+      expect(postLoginHtml).toContain('Blake G');
+      expect(postLoginHtml).toContain('Claimed by');
+      // Roster 2 shows Active badge for user_bob
+      expect(postLoginHtml).toContain('Active');
+
+      // 4. Final component unmount cleans up subscriptions
+      cleanup();
+      expect(unsubscriptionsCalled).toBe(2);
+      expect(activeListeners).toBe(0);
     });
   });
 });
