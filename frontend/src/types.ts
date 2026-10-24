@@ -41,6 +41,7 @@ export interface WeeklyParlay {
   season: string;
   status: 'open' | 'locked';
   contains_sgp: boolean;                  // True if multiple submitted legs share the same game_id
+  isRealDataLoaded?: boolean;             // True if loaded from live Sleeper API or Firestore sync
   bettor: {
     roster_id: number;
     team_name: string;

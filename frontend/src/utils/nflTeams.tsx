@@ -78,15 +78,17 @@ export const TeamLogo: React.FC<TeamLogoProps> = ({
 
   const dims =
     size === 'sm'
-      ? 'w-5 h-5 text-[9px]'
+      ? 'w-6 h-6 min-w-[1.5rem] min-h-[1.5rem] text-[9px]'
       : size === 'lg'
-      ? 'w-8 h-8 text-xs'
-      : 'w-7 h-7 text-[10px]';
+      ? 'w-8 h-8 min-w-[2rem] min-h-[2rem] text-xs'
+      : 'w-6 h-6 min-w-[1.5rem] min-h-[1.5rem] text-[10px]';
+
+  const pixelSize = size === 'lg' ? 32 : 24;
 
   if (!meta.logoUrl || imgError) {
     return (
       <div
-        className={`${dims} rounded-full flex items-center justify-center font-black text-white shrink-0 border border-white/20 shadow-sm ${className}`}
+        className={`${dims} rounded-full flex items-center justify-center font-black text-white shrink-0 aspect-square border border-white/20 shadow-sm ${className}`}
         style={{ backgroundColor: meta.color }}
       >
         {meta.abbr.slice(0, 3)}
@@ -96,13 +98,15 @@ export const TeamLogo: React.FC<TeamLogoProps> = ({
 
   return (
     <div
-      className={`${dims} rounded-full bg-slate-100/95 p-0.5 border border-white/30 flex items-center justify-center shrink-0 shadow-sm overflow-hidden ${className}`}
+      className={`${dims} rounded-full bg-slate-100/95 p-0.5 border border-white/30 flex items-center justify-center shrink-0 aspect-square shadow-sm overflow-hidden ${className}`}
     >
       <img
         src={meta.logoUrl}
         alt={meta.abbr}
+        width={pixelSize}
+        height={pixelSize}
         onError={() => setImgError(true)}
-        className="w-full h-full object-contain"
+        className="w-full h-full object-contain block select-none pointer-events-none"
         loading="lazy"
       />
     </div>
