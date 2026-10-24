@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, User, X, Check } from 'lucide-react';
+import { Search, X, Check } from 'lucide-react';
 import { ActivePlayer } from '../types';
+import { TeamLogo } from '../utils/nflTeams';
 
 interface Props {
   players: ActivePlayer[];
@@ -52,8 +53,11 @@ export const PlayerSearchInput: React.FC<Props> = ({ players, onSelectPlayer, se
           Search NFL Player
         </label>
         {selectedPlayer && (
-          <span className="text-[11px] text-sleeper-accent font-mono font-medium">
-            Active: {selectedPlayer.team} • {selectedPlayer.position}
+          <span className="inline-flex items-center space-x-1.5 text-[11px] text-sleeper-accent font-mono font-medium">
+            <TeamLogo team={selectedPlayer.team} size="sm" />
+            <span>
+              {selectedPlayer.name} ({selectedPlayer.team} • {selectedPlayer.position})
+            </span>
           </span>
         )}
       </div>
@@ -105,9 +109,7 @@ export const PlayerSearchInput: React.FC<Props> = ({ players, onSelectPlayer, se
                 }`}
               >
                 <div className="flex items-center space-x-2.5">
-                  <div className="w-6 h-6 rounded-full bg-sleeper-dark border border-sleeper-border flex items-center justify-center text-gray-300 text-xs">
-                    <User className="w-3.5 h-3.5" />
-                  </div>
+                  <TeamLogo team={p.team} size="md" />
                   <div>
                     <span className="font-semibold text-white text-sm block leading-tight">{p.name}</span>
                     <span className="text-[11px] text-gray-400 font-mono">

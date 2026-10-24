@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Copy, Check, MessageSquare } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import { WeeklyParlay } from '../types';
+import { formatOddsWithCents } from '../utils/parlayMath';
 
 interface Props {
   parlay: WeeklyParlay;
@@ -17,35 +18,46 @@ export const SleeperChatExport: React.FC<Props> = ({ parlay }) => {
       })
     : 'Sunday Kickoff';
 
-  const payoutStr = parlay.actual_payout 
-    ? `$${parlay.actual_payout.toFixed(2)} (Actual)` 
-    : `$${parlay.estimated_payout.toFixed(2)} (Est)`;
+  const isOfficialQuote = Boolean(parlay.actual_payout || parlay.actual_odds_american);
+  const payoutStr = parlay.actual_payout
+    ? `$${parlay.actual_payout.toFixed(2)} (Official)`
+    : `$${parlay.estimated_payout.toFixed(2)} (Est.)`;
 
   const oddsStr = parlay.actual_odds_american || parlay.estimated_odds_american;
 
   const generateSleeperText = (): string => {
+    const submittedLegs = parlay.legs.filter(l => l.status === 'submitted');
+    const pendingLegs = parlay.legs.filter(l => l.status === 'pending');
+    const totalPayout = parlay.actual_payout ?? parlay.estimated_payout;
+    const perPlayerPayout =
+      submittedLegs.length > 0 ? totalPayout / submittedLegs.length : 0;
+
     const lines = [
-      `🏈 WEEK ${parlay.week} TEAM PARLAY 🏈`,
+      `🏈 WEEK ${parlay.week} PARLAY 🏈`,
       `Bettor: ${parlay.bettor.owner_name} (${parlay.bettor.team_name}) - $5.00 Stake`,
-      `Odds: ${oddsStr} (${parlay.estimated_multiplier.toFixed(2)}x) | Payout: ${payoutStr}`,
+      `${isOfficialQuote ? 'Official Odds' : 'Est. Odds'}: ${oddsStr} (${parlay.estimated_multiplier.toFixed(2)}x) | ${isOfficialQuote ? 'Total Payout' : 'Est. Payout'}: ${payoutStr} ($${perPlayerPayout.toFixed(2)}/player)`,
       '',
-      'LEGS:',
-      ...parlay.legs.map((leg, i) => {
-        const defaultTag = leg.is_default_roll ? ' [🎲 Default]' : '';
-        return `${i + 1}. ${leg.team_name} (${leg.owner_name}): ${leg.description} (${leg.odds_american})${defaultTag}`;
+      `SUBMITTED LEGS (${submittedLegs.length}/${parlay.legs.length}):`,
+      ...submittedLegs.map((leg, i) => {
+        const formattedOdds = formatOddsWithCents(leg.odds_american, leg.price_cents);
+        return `${i + 1}. ${leg.team_name} (${leg.owner_name}): ${leg.description} [${formattedOdds}]`;
       }),
-      '',
     ];
 
+    if (pendingLegs.length > 0 && parlay.status === 'open') {
+      lines.push(
+        '',
+        `⏳ WAITING ON: ${pendingLegs.map(l => l.owner_name).join(', ')}`
+      );
+    }
+
+    lines.push('');
+
     if (parlay.contains_sgp) {
-      lines.push('⚠️ Correlated Same Game Parlay legs included.');
+      lines.push('⚠️ Correlated Same-Game Combo legs included.');
     }
 
-    if (parlay.finalized_by?.is_break_glass) {
-      lines.push(`⚡ Finalized via Break-Glass by ${parlay.finalized_by.owner_name}`);
-    }
-
-    lines.push(`⏳ Lock Deadline: ${formattedKickoff}`);
+    lines.push(`⏳ Submission Deadline: ${formattedKickoff}`);
     return lines.join('\n');
   };
 
@@ -55,7 +67,6 @@ export const SleeperChatExport: React.FC<Props> = ({ parlay }) => {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(text);
       } else {
-        // Fallback for non-secure contexts
         const textarea = document.createElement('textarea');
         textarea.value = text;
         textarea.style.position = 'fixed';
@@ -73,36 +84,24 @@ export const SleeperChatExport: React.FC<Props> = ({ parlay }) => {
   };
 
   return (
-    <div className="rounded-xl bg-sleeper-card border border-sleeper-border p-3.5 shadow-md">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center space-x-2 text-xs font-bold text-gray-200">
-          <MessageSquare className="w-4 h-4 text-sleeper-accent" />
-          <span>Sleeper Chat Exporter</span>
-        </div>
-        <span className="text-[10px] text-sleeper-muted font-mono">1-Click Format</span>
-      </div>
-
-      <p className="text-xs text-gray-400 mb-3 leading-relaxed">
-        Formatted text card ready to paste straight into your Sleeper league chat for full transparency.
-      </p>
-
+    <div className="px-4 py-3 bg-sleeper-dark/70 border-t border-sleeper-border flex items-center justify-end">
       <button
         type="button"
         onClick={handleCopy}
-        className={`w-full py-2.5 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center space-x-2 transition shadow-md ${
+        className={`w-full sm:w-auto py-2 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center space-x-2 transition shadow-sm ${
           copied
             ? 'bg-emerald-500 text-black shadow-emerald-500/20'
-            : 'bg-sleeper-dark border border-sleeper-accent/40 text-sleeper-accent hover:bg-sleeper-accent/10 active:scale-[0.99]'
+            : 'bg-sleeper-card border border-sleeper-accent/40 text-sleeper-accent hover:bg-sleeper-accent/15 active:scale-[0.99]'
         }`}
       >
         {copied ? (
           <>
-            <Check className="w-4 h-4 text-black stroke-[3]" />
-            <span>Copied to Clipboard! Ready to Paste</span>
+            <Check className="w-3.5 h-3.5 text-black stroke-[3]" />
+            <span>Copied for Sleeper!</span>
           </>
         ) : (
           <>
-            <Copy className="w-4 h-4" />
+            <Copy className="w-3.5 h-3.5" />
             <span>Copy Slip for Sleeper Chat</span>
           </>
         )}

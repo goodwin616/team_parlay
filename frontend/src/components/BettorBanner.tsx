@@ -55,9 +55,6 @@ export const BettorBanner: React.FC<Props> = ({ parlay }) => {
             <DollarSign className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Stake Due: $5.00</span>
           </div>
-          <span className="text-[10px] text-sleeper-muted mt-1">
-            1 leg per member
-          </span>
         </div>
       </div>
     </section>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { History, X, ChevronDown, ChevronUp, Dice5, ShieldAlert, Calendar } from 'lucide-react';
+import { History, X, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
 import { WeeklyParlay } from '../types';
+import { formatOddsWithCents } from '../utils/parlayMath';
 
 interface Props {
   isOpen: boolean;
@@ -23,7 +24,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
           <div className="flex items-center space-x-2">
             <History className="w-5 h-5 text-sleeper-accent" />
             <div>
-              <h3 className="text-base font-bold text-white">Past Parlay Slips Archive</h3>
+              <h3 className="text-base font-bold text-white">Past Kalshi Slips Archive</h3>
               <p className="text-[11px] text-sleeper-muted">Historical records • Pure archive (no grading)</p>
             </div>
           </div>
@@ -90,13 +91,6 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                   {/* Expanded Leg Details */}
                   {isExpanded && (
                     <div className="border-t border-sleeper-border/70 p-3 bg-sleeper-card/40 space-y-2">
-                      {parlay.finalized_by?.is_break_glass && (
-                        <div className="flex items-center space-x-1.5 text-[11px] text-red-300 bg-red-950/40 p-2 rounded-lg border border-red-900/50">
-                          <ShieldAlert className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                          <span>Finalized via Break-Glass by {parlay.finalized_by.owner_name}</span>
-                        </div>
-                      )}
-
                       <div className="divide-y divide-sleeper-border/40">
                         {parlay.legs.map((leg, i) => (
                           <div key={leg.id || i} className="py-2 flex items-center justify-between text-xs">
@@ -104,21 +98,11 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                               <div className="flex items-center space-x-1.5 flex-wrap">
                                 <span className="font-semibold text-white truncate">{leg.owner_name}</span>
                                 <span className="text-[10px] text-sleeper-muted">({leg.team_name})</span>
-                                {leg.is_default_roll && (
-                                  <span 
-                                    title="Auto-rolled from fallback default pool" 
-                                    aria-label="Auto-rolled from fallback default pool"
-                                    className="inline-flex items-center justify-center p-0.5 rounded bg-purple-900/40 text-purple-300 border border-purple-800 hover:bg-purple-800/50 transition cursor-help"
-                                  >
-                                    <Dice5 className="w-3 h-3 text-purple-300" />
-                                    <span className="sr-only">Auto-rolled from default pool</span>
-                                  </span>
-                                )}
                               </div>
                               <p className="text-gray-300 mt-0.5 leading-tight">{leg.description}</p>
                             </div>
                             <span className="font-mono text-xs font-bold text-sleeper-accent shrink-0">
-                              {leg.odds_american}
+                              {formatOddsWithCents(leg.odds_american, leg.price_cents)}
                             </span>
                           </div>
                         ))}

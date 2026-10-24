@@ -1,29 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, AlertTriangle, Dice5, CheckCircle2, CircleDashed, Edit3, ExternalLink } from 'lucide-react';
-import { WeeklyParlay, ParlayLeg, TeamProfile } from '../types';
-import { getTeamDefaults } from '../utils/defaultPoolUtils';
+import { Clock, AlertTriangle, CheckCircle2, CircleDashed, Edit3, ExternalLink, Info, PlusCircle } from 'lucide-react';
+import { WeeklyParlay, ParlayLeg } from '../types';
+import { formatOddsWithCents, formatComboOdds, OddsFormat } from '../utils/parlayMath';
+import { TeamLogo } from '../utils/nflTeams';
+import { SleeperChatExport } from './SleeperChatExport';
 
 interface Props {
   parlay: WeeklyParlay;
   currentRosterId: number | null;
-  teams?: TeamProfile[];
   onOpenPickModal: (leg: ParlayLeg) => void;
-  onOpenDefaultPoolModal?: () => void;
-  onOpenDefaultPool?: () => void;
-  onViewTeamDefaults?: (team: TeamProfile) => void;
+  oddsFormat?: OddsFormat;
+  onToggleOddsFormat?: (format: OddsFormat) => void;
 }
 
 export const ParlayCard: React.FC<Props> = ({
   parlay,
   currentRosterId,
-  teams,
   onOpenPickModal,
-  onOpenDefaultPoolModal,
-  onOpenDefaultPool,
-  onViewTeamDefaults,
+  oddsFormat = 'american',
+  onToggleOddsFormat,
 }) => {
-  const handleOpenDefaultPool = onOpenDefaultPoolModal || onOpenDefaultPool;
   const [timeLeft, setTimeLeft] = useState<string>('');
+  const [showEstimateInfo, setShowEstimateInfo] = useState<boolean>(false);
 
   // Live countdown to earliest kickoff
   useEffect(() => {
@@ -59,9 +57,23 @@ export const ParlayCard: React.FC<Props> = ({
     return () => clearInterval(interval);
   }, [parlay.earliest_kickoff]);
 
-  const hasTnf = parlay.legs.some(leg => 
-    leg.kickoff_time?.includes('T20:15') || 
-    (leg.kickoff_time && new Date(leg.kickoff_time).getDay() === 4)
+  const submittedCount = parlay.legs.filter(l => l.status === 'submitted').length;
+  const isOfficialQuote = Boolean(parlay.actual_payout || parlay.actual_odds_american);
+  const totalPayout = parlay.actual_payout ?? parlay.estimated_payout;
+  const payoutPerPlayer = submittedCount > 0 ? totalPayout / submittedCount : 0;
+
+  // Pin current user's leg to the top of the list so it's always immediately accessible
+  const orderedLegs = [...parlay.legs].sort((a, b) => {
+    const aIsUser = currentRosterId !== null && a.roster_id === currentRosterId ? 0 : 1;
+    const bIsUser = currentRosterId !== null && b.roster_id === currentRosterId ? 0 : 1;
+    return aIsUser - bIsUser;
+  });
+
+  const hasTnf = parlay.legs.some(
+    leg =>
+      leg.status === 'submitted' &&
+      (leg.kickoff_time?.includes('T20:15') ||
+        (leg.kickoff_time && new Date(leg.kickoff_time).getDay() === 4))
   );
 
   const formattedKickoff = parlay.earliest_kickoff
@@ -76,58 +88,124 @@ export const ParlayCard: React.FC<Props> = ({
 
   return (
     <div className="rounded-2xl bg-sleeper-card border border-sleeper-border shadow-xl overflow-hidden mb-6">
-      {/* Card Header: Week, Odds, Payout, Status */}
+      {/* Card Header: Week, Kalshi Combo Odds, Payout, Status */}
       <div className="p-4 border-b border-sleeper-border bg-gradient-to-b from-[#222E40] to-sleeper-card">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center space-x-2">
             <span className="text-xs font-black tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-sleeper-accent/15 text-sleeper-accent border border-sleeper-accent/30">
-              Week {parlay.week} Slip
+              Week {parlay.week} Parlay
             </span>
-            <span
-              className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
-                parlay.status === 'open'
-                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
-                  : 'bg-gray-700/40 border-gray-600 text-gray-300'
-              }`}
-            >
-              {parlay.status === 'open' ? '● Open' : '🔒 Locked'}
-            </span>
+            {isOfficialQuote ? (
+              <span
+                className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                title="Verified quote from placed combo ticket"
+              >
+                Official Quote
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowEstimateInfo(prev => !prev)}
+                aria-expanded={showEstimateInfo}
+                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border inline-flex items-center space-x-1 transition cursor-pointer ${
+                  showEstimateInfo
+                    ? 'bg-amber-500/30 text-amber-200 border-amber-400/60'
+                    : 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                }`}
+                title="Click to see how this estimate is calculated"
+              >
+                <Info className="w-3 h-3 shrink-0" />
+                <span>Estimate</span>
+              </button>
+            )}
           </div>
 
-          <div className="text-xs text-sleeper-muted font-mono font-medium">
-            {parlay.legs.filter(l => l.status === 'submitted').length} / {parlay.legs.length} legs ready
+          <div className="flex items-center space-x-2.5">
+            {onToggleOddsFormat && (
+              <div
+                className="inline-flex rounded-lg bg-sleeper-dark p-0.5 border border-sleeper-border text-[10px] font-bold"
+                title="Switch between American Odds (-110) and Percentage Odds (52%)"
+              >
+                <button
+                  type="button"
+                  onClick={() => onToggleOddsFormat('american')}
+                  className={`px-2 py-0.5 rounded-md transition ${
+                    oddsFormat === 'american'
+                      ? 'bg-sleeper-accent text-black font-extrabold'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  American
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onToggleOddsFormat('percentage')}
+                  className={`px-2 py-0.5 rounded-md transition ${
+                    oddsFormat === 'percentage'
+                      ? 'bg-sleeper-accent text-black font-extrabold'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  % Odds
+                </button>
+              </div>
+            )}
+
+            <div className="text-xs text-sleeper-muted font-mono font-medium">
+              {submittedCount} / {parlay.legs.length} picks in
+            </div>
           </div>
         </div>
 
-        {/* Unified 3-Metric Stats Bar */}
-        <div className="mt-3.5 grid grid-cols-3 gap-2 p-3 rounded-xl bg-sleeper-dark/90 border border-sleeper-border text-center">
+        {/* Unified 4-Metric Stats Bar */}
+        <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 rounded-xl bg-sleeper-dark/90 border border-sleeper-border text-center">
           <div className="border-r border-sleeper-border/70 pr-2">
             <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
-              Combined Odds
+              {isOfficialQuote ? 'Combo Odds' : 'Est. Combo Odds'}
             </span>
             <span className="text-sm sm:text-base font-black font-mono text-white">
-              {parlay.actual_odds_american || parlay.estimated_odds_american}
+              {formatComboOdds(
+                parlay.actual_odds_american || parlay.estimated_odds_american,
+                parlay.estimated_multiplier,
+                parlay.combined_probability_cents,
+                oddsFormat
+              )}
             </span>
           </div>
 
-          <div className="border-r border-sleeper-border/70 px-2">
+          <div className="sm:border-r border-sleeper-border/70 px-2">
             <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
-              Multiplier
+              {isOfficialQuote ? 'Multiplier' : 'Est. Multiplier'}
             </span>
             <span className="text-sm sm:text-base font-extrabold font-mono text-white">
               {parlay.estimated_multiplier.toFixed(2)}x
             </span>
           </div>
 
-          <div className="pl-2">
+          <div className="border-r border-sleeper-border/70 pr-2 sm:px-2 pt-2 sm:pt-0 border-t sm:border-t-0">
             <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
-              {parlay.actual_payout ? 'Actual Payout' : 'Est. Payout'}
+              {isOfficialQuote ? 'Total Payout' : 'Est. Total Payout'}
             </span>
             <span className="text-sm sm:text-base font-black font-mono text-sleeper-accent">
-              ${parlay.actual_payout?.toFixed(2) || parlay.estimated_payout.toFixed(2)}
+              ${totalPayout.toFixed(2)}
+            </span>
+          </div>
+
+          <div className="pl-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-sleeper-border/70">
+            <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
+              {isOfficialQuote ? 'Payout / Player' : 'Est. Payout / Player'}
+            </span>
+            <span className="text-sm sm:text-base font-black font-mono text-emerald-400">
+              ${payoutPerPlayer.toFixed(2)}
             </span>
           </div>
         </div>
+
+        {!isOfficialQuote && showEstimateInfo && (
+          <p className="mt-2.5 px-2.5 py-2 rounded-lg bg-amber-950/30 border border-amber-800/40 text-[11px] text-amber-200/90 leading-relaxed animate-fadeIn">
+            * Estimated via independent leg math (not Kalshi&apos;s live RFQ combo calculator). Final payout may vary with market spread or SGP correlation.
+          </p>
+        )}
       </div>
 
       {/* Earliest Kickoff Deadline Banner */}
@@ -139,7 +217,7 @@ export const ParlayCard: React.FC<Props> = ({
               {hasTnf ? (
                 <strong>⏳ TNF Leg Included: </strong>
               ) : (
-                <strong>Lock Deadline: </strong>
+                <strong>Submission Deadline: </strong>
               )}
               {formattedKickoff}
             </span>
@@ -152,44 +230,48 @@ export const ParlayCard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* SGP Amber Alert Badge */}
+      {/* Same-Game Combo Alert Badge */}
       {parlay.contains_sgp && (
         <div className="px-4 py-2.5 bg-amber-950/40 border-b border-amber-900/50 flex items-start space-x-2.5 text-xs text-amber-200">
           <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div className="leading-snug">
-            <strong className="text-amber-300">⚠️ Same Game Parlay Detected: </strong>
-            Multiple legs share the same game. Sportsbooks discount correlated odds; check your betting app for actual payout.
+            <strong className="text-amber-300">⚠️ Same-Game Combo Detected: </strong>
+            Multiple legs share the same matchup. Kalshi RFQ combo quotes adjust pricing for correlated outcomes.
           </div>
         </div>
       )}
 
-      {/* Legs List */}
+      {/* Legs List (Current user's leg pinned first with inline action CTA) */}
       <div className="divide-y divide-sleeper-border/60">
-        {parlay.legs.map((leg, index) => {
+        {orderedLegs.map((leg, index) => {
           const isCurrentUserLeg = currentRosterId !== null && leg.roster_id === currentRosterId;
           const isSubmitted = leg.status === 'submitted';
           const canEdit = parlay.status === 'open' && isCurrentUserLeg;
-          const team = teams?.find(t => t.roster_id === leg.roster_id);
-          const defaultsCount = team ? getTeamDefaults(team).length : 0;
 
           return (
             <div
               key={leg.id || `leg-${index}`}
               role={canEdit ? 'button' : undefined}
               tabIndex={canEdit ? 0 : undefined}
-              onKeyDown={canEdit ? (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onOpenPickModal(leg);
-                }
-              } : undefined}
+              onKeyDown={
+                canEdit
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onOpenPickModal(leg);
+                      }
+                    }
+                  : undefined
+              }
               onClick={canEdit ? () => onOpenPickModal(leg) : undefined}
               className={`p-3.5 flex items-center justify-between transition ${
-                canEdit ? 'cursor-pointer hover:bg-sleeper-accent/10 active:scale-[0.995]' : ''
+                canEdit ? 'cursor-pointer hover:bg-sleeper-accent/15 active:scale-[0.995]' : ''
               } ${
-                isCurrentUserLeg && !canEdit ? 'bg-sleeper-accent/5' : !canEdit ? 'hover:bg-white/[0.02]' : ''
-              } ${isCurrentUserLeg && canEdit ? 'bg-sleeper-accent/5' : ''}`}
-              title={canEdit ? 'Tap to edit your pick' : undefined}
+                isCurrentUserLeg
+                  ? 'bg-sleeper-accent/[0.08]'
+                  : 'hover:bg-white/[0.02]'
+              }`}
+              title={canEdit ? 'Tap to submit or edit your weekly pick' : undefined}
             >
               <div className="flex items-start space-x-3 min-w-0 pr-2">
                 <div className="mt-0.5 shrink-0">
@@ -208,91 +290,49 @@ export const ParlayCard: React.FC<Props> = ({
                       ({leg.team_name})
                     </span>
 
-                    {/* Interactive Default Picks Status Badge */}
-                    {team && (
-                      defaultsCount > 0 ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onViewTeamDefaults?.(team);
-                          }}
-                          onKeyDown={(e) => {
-                            e.stopPropagation();
-                          }}
-                          title={`View ${team.team_name || leg.team_name}'s fallback default picks (${defaultsCount} configured)`}
-                          aria-label={`View ${team.team_name || leg.team_name}'s fallback default picks (${defaultsCount} configured)`}
-                          className="relative before:absolute before:-inset-x-2 before:-inset-y-3 before:content-[''] inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-950/60 hover:bg-purple-900/80 active:bg-purple-800 border border-purple-500/40 text-purple-300 hover:text-purple-100 transition shadow-sm cursor-pointer"
-                        >
-                          <Dice5 className="w-3 h-3 text-purple-400 shrink-0" />
-                          <span>{defaultsCount} Defaults</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onViewTeamDefaults?.(team);
-                          }}
-                          onKeyDown={(e) => {
-                            e.stopPropagation();
-                          }}
-                          title={`${team.team_name || leg.team_name} has no fallback default picks configured`}
-                          aria-label={`${team.team_name || leg.team_name} has no fallback default picks configured. Tap to view details.`}
-                          className="relative before:absolute before:-inset-x-2 before:-inset-y-3 before:content-[''] inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-950/60 hover:bg-amber-900/80 active:bg-amber-800 border border-amber-500/40 text-amber-300 hover:text-amber-100 transition shadow-sm cursor-pointer"
-                        >
-                          <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
-                          <span>No Defaults</span>
-                        </button>
-                      )
-                    )}
-
-                    {/* Auto-Rolled Default Badge */}
-                    {leg.is_default_roll && (
-                      <span 
-                        title="Auto-rolled from fallback default pool" 
-                        aria-label="Auto-rolled from fallback default pool"
-                        className="inline-flex items-center justify-center p-1 rounded bg-purple-900/50 border border-purple-600/60 text-purple-300 hover:bg-purple-800/60 transition cursor-help"
-                      >
-                        <Dice5 className="w-3.5 h-3.5 text-purple-300" />
-                        <span className="sr-only">Auto-rolled from default pool</span>
-                      </span>
-                    )}
-
-                    {!isSubmitted && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono">
-                        Waiting
-                      </span>
-                    )}
-
                     {isCurrentUserLeg && (
-                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-sleeper-accent/15 border border-sleeper-accent/30 text-sleeper-accent text-[10px] font-bold">
-                        <Edit3 className="w-3 h-3" />
-                        <span>You • Edit</span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-sleeper-accent/15 border border-sleeper-accent/30 text-sleeper-accent text-[10px] font-bold uppercase tracking-wider">
+                        Your Weekly Pick
                       </span>
                     )}
                   </div>
 
-                  <p className={`text-xs mt-1 leading-snug break-words ${
-                    isSubmitted ? 'font-medium text-gray-200' : 'italic text-gray-300 font-normal'
-                  }`}>
-                    {leg.description}
-                  </p>
+                  {isSubmitted && (
+                    <div className="text-xs mt-1 leading-snug break-words flex items-center space-x-1.5 font-medium text-gray-200">
+                      {leg.nfl_team && leg.nfl_team !== 'NFL' && (
+                        <TeamLogo team={leg.nfl_team} size="sm" />
+                      )}
+                      <span>{leg.description}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Odds Column - Uniform width and strictly right-aligned */}
-              <div className="shrink-0 flex items-center justify-end pl-3">
+              {/* Right Column: Odds Badge + Submit/Edit CTA for Current User */}
+              <div className="shrink-0 flex items-center justify-end space-x-2 pl-3">
                 {isSubmitted ? (
-                  <span className="font-mono text-xs font-bold w-14 text-center py-1 rounded bg-sleeper-dark border border-sleeper-border text-sleeper-accent shadow-sm">
-                    {leg.odds_american}
+                  <>
+                    {canEdit && (
+                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-sleeper-accent text-black text-xs font-extrabold shadow-sm hover:brightness-110 transition">
+                        <Edit3 className="w-3 h-3" />
+                        <span>Edit</span>
+                      </span>
+                    )}
+                    <span className="font-mono text-xs font-bold px-2.5 py-1 rounded bg-sleeper-dark border border-sleeper-border text-sleeper-accent shadow-sm whitespace-nowrap">
+                      {formatOddsWithCents(leg.odds_american, leg.price_cents, oddsFormat)}
+                    </span>
+                  </>
+                ) : canEdit ? (
+                  <span className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-sleeper-accent text-black text-xs font-black shadow-md shadow-sleeper-accent/20 hover:brightness-110 transition">
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>Submit Pick</span>
                   </span>
                 ) : (
-                  <span 
-                    title="Waiting for pick submission (will snap from fallback default pool if deadline passes)"
-                    className="font-mono text-xs font-semibold w-14 text-center py-1 rounded bg-sleeper-dark border border-dashed border-gray-600 text-gray-300"
+                  <span
+                    title="Waiting for member to submit their weekly pick"
+                    className="font-mono text-xs font-semibold w-16 text-center py-1 rounded bg-sleeper-dark border border-dashed border-gray-600 text-gray-400"
                   >
-                    TBD
+                    Pending
                   </span>
                 )}
               </div>
@@ -301,7 +341,10 @@ export const ParlayCard: React.FC<Props> = ({
         })}
       </div>
 
-      {/* Sportsbook Share Link if available */}
+      {/* Sleeper Chat Share Footer */}
+      <SleeperChatExport parlay={parlay} />
+
+      {/* Kalshi Share Link if available */}
       {parlay.sportsbook_url && (
         <div className="p-3 bg-sleeper-dark/60 border-t border-sleeper-border text-center">
           <a
@@ -310,23 +353,9 @@ export const ParlayCard: React.FC<Props> = ({
             rel="noopener noreferrer"
             className="inline-flex items-center space-x-1.5 text-xs text-sleeper-accent hover:underline font-semibold"
           >
-            <span>View Ticket on Sportsbook</span>
+            <span>View Combo Ticket on Kalshi</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
-        </div>
-      )}
-
-      {/* Fallback Pool Manager Trigger - Full-width 44px button */}
-      {handleOpenDefaultPool && (
-        <div className="p-3 sm:p-3.5 bg-sleeper-dark/90 border-t border-sleeper-border">
-          <button
-            type="button"
-            onClick={handleOpenDefaultPool}
-            className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-purple-950/40 hover:bg-purple-900/50 active:bg-purple-900/70 border border-purple-500/40 text-purple-200 hover:text-white font-bold text-xs transition flex items-center justify-center space-x-2 shadow-sm active:scale-[0.99]"
-          >
-            <Dice5 className="w-4 h-4 text-purple-300 shrink-0" />
-            <span>Manage Fallback Rules (3–5 Slots)</span>
-          </button>
         </div>
       )}
     </div>
