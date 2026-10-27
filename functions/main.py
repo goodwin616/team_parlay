@@ -103,6 +103,18 @@ def require_actor(req: https_fn.CallableRequest) -> Dict[str, Any]:
             message="Authentication required",
         )
 
+def get_max_leg_odds_percent() -> Optional[float]:
+    raw = os.environ.get("MAX_LEG_ODDS_PERCENT", "").strip()
+    if not raw:
+        return None
+    try:
+        val = float(raw)
+        if 0 < val <= 100:
+            return val
+        return None
+    except (ValueError, TypeError):
+        return None
+
 # =====================================================================
 # Callable Firebase Functions (Multi-League & Season Scoped)
 # =====================================================================
@@ -522,6 +534,18 @@ def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
         )
     leg["kickoff_time"] = effective_kickoff
 
+    max_odds = get_max_leg_odds_percent()
+    leg_price = leg.get("price_cents")
+    if max_odds is not None and leg_price is not None:
+        try:
+            if float(leg_price) > max_odds:
+                raise https_fn.HttpsError(
+                    code=https_fn.FunctionsErrorCode.FAILED_PRECONDITION,
+                    message=f"Leg odds ({leg_price}%) exceed the maximum allowed limit of {int(max_odds)}%",
+                )
+        except (ValueError, TypeError):
+            pass
+
     legs = parlay_data.get("legs", [])
     updated_legs = []
     before = None
@@ -620,5 +644,6 @@ def get_kalshi_nfl_markets(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "updated_at": board.get("updated_at"),
         "cached": bool(board.get("cached", False)),
         "authenticated": kalshi_client.is_authenticated,
+        "max_leg_odds_percent": get_max_leg_odds_percent(),
     }
 
