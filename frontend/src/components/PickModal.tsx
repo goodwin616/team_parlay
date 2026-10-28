@@ -951,10 +951,6 @@ export const PickModal: React.FC<Props> = ({
   let previewSide: "yes" | "no" = "yes";
   let previewKickoff: string | undefined = undefined;
   let previewGameId: string | undefined = undefined;
-  const canSubmit =
-    tab === "mainline"
-      ? Boolean(selectedGame) && !isExceedingMax(previewCents)
-      : Boolean(selectedPlayer && activeContract) && !isExceedingMax(previewCents);
 
   if (tab === "prop") {
     if (selectedPlayer && activeContract) {
@@ -974,6 +970,11 @@ export const PickModal: React.FC<Props> = ({
       previewGameId = activeContract.game_id;
       const sideBadge = selectedSide === "yes" ? "YES" : "NO";
       previewLine = `${playerText} • ${activeContract.label} (${sideBadge})`;
+
+      if (isExceedingMax(previewCents)) {
+        previewLine = "Select an available contract strike & side above";
+        previewTeam = "";
+      }
     } else if (selectedPlayer) {
       previewLine = "Select a contract strike & side above";
       previewTeam = selectedPlayer.team || "";
@@ -982,55 +983,76 @@ export const PickModal: React.FC<Props> = ({
       previewTeam = "";
     }
   } else {
-    previewGameId = selectedGame.game_id;
-    previewKickoff = selectedGame.commence_time;
+    previewGameId = selectedGame?.game_id;
+    previewKickoff = selectedGame?.commence_time;
     previewSide = "yes";
-    if (mainlineType === "spread_away") {
-      const pt =
-        selectedGame.spread_away.point > 0
-          ? `+${selectedGame.spread_away.point}`
-          : `${selectedGame.spread_away.point}`;
-      previewTeam = selectedGame.away_team;
-      previewOdds = selectedGame.spread_away.odds;
-      previewCents = selectedGame.spread_away.price_cents;
-      previewTicker = selectedGame.spread_away.market_ticker;
-      previewLine = `${selectedGame.away_team} ${pt} Spread`;
-    } else if (mainlineType === "spread_home") {
-      const pt =
-        selectedGame.spread_home.point > 0
-          ? `+${selectedGame.spread_home.point}`
-          : `${selectedGame.spread_home.point}`;
-      previewTeam = selectedGame.home_team;
-      previewOdds = selectedGame.spread_home.odds;
-      previewCents = selectedGame.spread_home.price_cents;
-      previewTicker = selectedGame.spread_home.market_ticker;
-      previewLine = `${selectedGame.home_team} ${pt} Spread`;
-    } else if (mainlineType === "ml_away") {
-      previewTeam = selectedGame.away_team;
-      previewOdds = selectedGame.ml_away.odds;
-      previewCents = selectedGame.ml_away.price_cents;
-      previewTicker = selectedGame.ml_away.market_ticker;
-      previewLine = `${selectedGame.away_team} Winner (Moneyline)`;
-    } else if (mainlineType === "ml_home") {
-      previewTeam = selectedGame.home_team;
-      previewOdds = selectedGame.ml_home.odds;
-      previewCents = selectedGame.ml_home.price_cents;
-      previewTicker = selectedGame.ml_home.market_ticker;
-      previewLine = `${selectedGame.home_team} Winner (Moneyline)`;
-    } else if (mainlineType === "total_over") {
-      previewTeam = selectedGame.home_team;
-      previewOdds = selectedGame.total_over.odds;
-      previewCents = selectedGame.total_over.price_cents;
-      previewTicker = selectedGame.total_over.market_ticker;
-      previewLine = `${selectedGame.away_team} @ ${selectedGame.home_team} OVER ${selectedGame.total_over.point}`;
+    if (selectedGame) {
+      if (mainlineType === "spread_away") {
+        const pt =
+          selectedGame.spread_away.point > 0
+            ? `+${selectedGame.spread_away.point}`
+            : `${selectedGame.spread_away.point}`;
+        previewTeam = selectedGame.away_team;
+        previewOdds = selectedGame.spread_away.odds;
+        previewCents = selectedGame.spread_away.price_cents;
+        previewTicker = selectedGame.spread_away.market_ticker;
+        previewLine = `${selectedGame.away_team} ${pt} Spread`;
+      } else if (mainlineType === "spread_home") {
+        const pt =
+          selectedGame.spread_home.point > 0
+            ? `+${selectedGame.spread_home.point}`
+            : `${selectedGame.spread_home.point}`;
+        previewTeam = selectedGame.home_team;
+        previewOdds = selectedGame.spread_home.odds;
+        previewCents = selectedGame.spread_home.price_cents;
+        previewTicker = selectedGame.spread_home.market_ticker;
+        previewLine = `${selectedGame.home_team} ${pt} Spread`;
+      } else if (mainlineType === "ml_away") {
+        previewTeam = selectedGame.away_team;
+        previewOdds = selectedGame.ml_away.odds;
+        previewCents = selectedGame.ml_away.price_cents;
+        previewTicker = selectedGame.ml_away.market_ticker;
+        previewLine = `${selectedGame.away_team} Winner (Moneyline)`;
+      } else if (mainlineType === "ml_home") {
+        previewTeam = selectedGame.home_team;
+        previewOdds = selectedGame.ml_home.odds;
+        previewCents = selectedGame.ml_home.price_cents;
+        previewTicker = selectedGame.ml_home.market_ticker;
+        previewLine = `${selectedGame.home_team} Winner (Moneyline)`;
+      } else if (mainlineType === "total_over") {
+        previewTeam = selectedGame.home_team;
+        previewOdds = selectedGame.total_over.odds;
+        previewCents = selectedGame.total_over.price_cents;
+        previewTicker = selectedGame.total_over.market_ticker;
+        previewLine = `${selectedGame.away_team} @ ${selectedGame.home_team} OVER ${selectedGame.total_over.point}`;
+      } else {
+        previewTeam = selectedGame.home_team;
+        previewOdds = selectedGame.total_under.odds;
+        previewCents = selectedGame.total_under.price_cents;
+        previewTicker = selectedGame.total_under.market_ticker;
+        previewLine = `${selectedGame.away_team} @ ${selectedGame.home_team} UNDER ${selectedGame.total_under.point}`;
+      }
+
+      if (isExceedingMax(previewCents)) {
+        previewLine = "Select an available game line above";
+        previewTeam = "";
+      }
     } else {
-      previewTeam = selectedGame.home_team;
-      previewOdds = selectedGame.total_under.odds;
-      previewCents = selectedGame.total_under.price_cents;
-      previewTicker = selectedGame.total_under.market_ticker;
-      previewLine = `${selectedGame.away_team} @ ${selectedGame.home_team} UNDER ${selectedGame.total_under.point}`;
+      previewLine = "Select an available game line above";
+      previewTeam = "";
     }
   }
+
+  const canSubmit =
+    tab === "mainline"
+      ? Boolean(selectedGame) &&
+        !isExceedingMax(previewCents) &&
+        previewLine !== "Select an available game line above"
+      : Boolean(selectedPlayer && activeContract) &&
+        !isExceedingMax(previewCents) &&
+        previewLine !== "Select an available contract strike & side above" &&
+        !(selectedSide === "no" && isExceedingMax(activeContract?.no_cents)) &&
+        !(selectedSide === "yes" && isExceedingMax(activeContract?.yes_cents));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1292,47 +1314,73 @@ export const PickModal: React.FC<Props> = ({
                                     </div>
 
                                     <div className="flex items-center space-x-2 shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setSelectedContractIdx(actualIdx);
-                                          setSelectedSide("yes");
-                                        }}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition ${
-                                          isContractSelected &&
-                                          selectedSide === "yes"
-                                            ? "bg-emerald-500 text-black border-emerald-400 shadow"
-                                            : "bg-sleeper-card text-gray-300 border-sleeper-border hover:border-emerald-500/50"
-                                        }`}
-                                      >
-                                        YES{" "}
-                                        {formatOddsWithCents(
-                                          contract.yes_odds,
-                                          contract.yes_cents,
-                                          oddsFormat,
-                                        )}
-                                      </button>
+                                      {(() => {
+                                        const isYesDisabled = isExceedingMax(contract.yes_cents);
+                                        const isNoDisabled = isExceedingMax(contract.no_cents);
+                                        return (
+                                          <>
+                                            <button
+                                              type="button"
+                                              disabled={isYesDisabled}
+                                              onClick={() => {
+                                                if (isYesDisabled) return;
+                                                setSelectedContractIdx(actualIdx);
+                                                setSelectedSide("yes");
+                                              }}
+                                              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition ${
+                                                isYesDisabled
+                                                  ? "opacity-30 cursor-not-allowed bg-sleeper-card/40 text-gray-500 border-sleeper-border/50"
+                                                  : isContractSelected &&
+                                                    selectedSide === "yes"
+                                                    ? "bg-emerald-500 text-black border-emerald-400 shadow"
+                                                    : "bg-sleeper-card text-gray-300 border-sleeper-border hover:border-emerald-500/50"
+                                              }`}
+                                              title={
+                                                isYesDisabled
+                                                  ? `Exceeds max odds limit of ${maxLegOddsPercent}%`
+                                                  : undefined
+                                              }
+                                            >
+                                              YES{" "}
+                                              {formatOddsWithCents(
+                                                contract.yes_odds,
+                                                contract.yes_cents,
+                                                oddsFormat,
+                                              )}
+                                            </button>
 
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setSelectedContractIdx(actualIdx);
-                                          setSelectedSide("no");
-                                        }}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition ${
-                                          isContractSelected &&
-                                          selectedSide === "no"
-                                            ? "bg-red-500 text-white border-red-400 shadow"
-                                            : "bg-sleeper-card text-gray-300 border-sleeper-border hover:border-red-500/50"
-                                        }`}
-                                      >
-                                        NO{" "}
-                                        {formatOddsWithCents(
-                                          contract.no_odds,
-                                          contract.no_cents,
-                                          oddsFormat,
-                                        )}
-                                      </button>
+                                            <button
+                                              type="button"
+                                              disabled={isNoDisabled}
+                                              onClick={() => {
+                                                if (isNoDisabled) return;
+                                                setSelectedContractIdx(actualIdx);
+                                                setSelectedSide("no");
+                                              }}
+                                              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition ${
+                                                isNoDisabled
+                                                  ? "opacity-30 cursor-not-allowed bg-sleeper-card/40 text-gray-500 border-sleeper-border/50"
+                                                  : isContractSelected &&
+                                                    selectedSide === "no"
+                                                    ? "bg-red-500 text-white border-red-400 shadow"
+                                                    : "bg-sleeper-card text-gray-300 border-sleeper-border hover:border-red-500/50"
+                                              }`}
+                                              title={
+                                                isNoDisabled
+                                                  ? `Exceeds max odds limit of ${maxLegOddsPercent}%`
+                                                  : undefined
+                                              }
+                                            >
+                                              NO{" "}
+                                              {formatOddsWithCents(
+                                                contract.no_odds,
+                                                contract.no_cents,
+                                                oddsFormat,
+                                              )}
+                                            </button>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   </div>
                                 );

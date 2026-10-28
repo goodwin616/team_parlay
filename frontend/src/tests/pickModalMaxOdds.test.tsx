@@ -215,4 +215,146 @@ describe('PickModal Max Leg Odds Filtering', () => {
     // 22c is under 50c, so 2+ Touchdowns should be in document
     expect(screen.getByText('2+ Touchdowns')).toBeInTheDocument();
   });
+
+  it('enables submit button for valid picks when maxLegOddsPercent is 50 (below initial 53c default)', () => {
+    const validLeg = {
+      id: 'leg-valid',
+      roster_id: 1,
+      team_name: 'Team 1',
+      owner_name: 'Owner',
+      description: 'Saquon Barkley (PHI) • 2+ Touchdowns (YES)',
+      nfl_team: 'PHI',
+      odds_american: '+355',
+      odds_decimal: 4.55,
+      price_cents: 22,
+      status: 'submitted' as const,
+      kalshi_market_ticker: 'KXNFLTD-26NOV01-SAQUONBARK-2',
+      kalshi_side: 'yes' as const,
+    };
+
+    const { html } = render(
+      <PickModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmitPick={vi.fn()}
+        rosterName="Team 1"
+        activePlayers={[{ id: 'p1', name: 'Saquon Barkley', team: 'PHI', position: 'RB' }]}
+        kalshiProps={[]}
+        initialPlayer={{ id: 'p1', name: 'Saquon Barkley', team: 'PHI', position: 'RB' }}
+        currentLeg={validLeg}
+        maxLegOddsPercent={50}
+      />
+    );
+
+    // 22c pick is well below 50% max odds limit
+    expect(html).toContain('Saquon Barkley (PHI) • 2+ Touchdowns (YES)');
+    // Submit button should NOT be disabled
+    expect(html).not.toMatch(/<button[^>]*type="submit"[^>]*disabled/i);
+    expect(html).toContain('Submit My Weekly Leg');
+  });
+
+  it('blocks submission and shows placeholder preview when default game line exceeds maxLegOddsPercent', () => {
+    // In sampleGame: spread_away is KC +2.5 with price_cents: 52
+    // With maxLegOddsPercent: 50, the default spread_away exceeds 50%
+    const { html } = render(
+      <PickModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmitPick={vi.fn()}
+        rosterName="Team 1"
+        activePlayers={[]}
+        kalshiGames={[sampleGame]}
+        initialTab="mainline"
+        maxLegOddsPercent={50}
+      />
+    );
+
+    // Preview should prompt user to select an available line rather than pre-populating KC +2.5 Spread
+    expect(screen.getByText('Select an available game line above')).toBeInTheDocument();
+    expect(screen.queryByText('KC +2.5 Spread')).not.toBeInTheDocument();
+
+    // Submit button MUST be disabled
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled/i);
+  });
+
+  it('disables player prop NO button when no_cents exceeds maxLegOddsPercent', () => {
+    const propWithHighNo = [
+      {
+        player_name: 'Saquon Barkley',
+        stat_category: 'Rush Yards',
+        label: '80+ Rush Yards',
+        yes_cents: 35, // 35% <= 50% (Valid YES)
+        no_cents: 65,  // 65% > 50% (Exceeds max odds limit)
+        market_ticker: 'T_P_HIGH_NO',
+        series_ticker: 'KXNFLRUSHYDS',
+      },
+    ];
+
+    const { html } = render(
+      <PickModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmitPick={vi.fn()}
+        rosterName="Team 1"
+        activePlayers={[{ id: 'p1', name: 'Saquon Barkley', team: 'PHI', position: 'RB' }]}
+        kalshiProps={propWithHighNo}
+        initialPlayer={{ id: 'p1', name: 'Saquon Barkley', team: 'PHI', position: 'RB' }}
+        maxLegOddsPercent={50}
+      />
+    );
+
+    expect(screen.getByText('80+ Rush Yards')).toBeInTheDocument();
+    // YES button should be enabled and interactive
+    expect(html).toMatch(/<button[^>]*type="button"[^>]*>\s*YES/i);
+    // NO button must be disabled with title explaining limit
+    expect(html).toMatch(/<button[^>]*type="button"[^>]*disabled=""[^>]*>\s*NO/i);
+    expect(html).toContain('Exceeds max odds limit of 50%');
+  });
+
+  it('blocks submission if an existing submitted leg is on the exceeding NO side', () => {
+    const propWithHighNo = [
+      {
+        player_name: 'Saquon Barkley',
+        stat_category: 'Rush Yards',
+        label: '80+ Rush Yards',
+        yes_cents: 35,
+        no_cents: 65,
+        market_ticker: 'T_P_HIGH_NO',
+        series_ticker: 'KXNFLRUSHYDS',
+      },
+    ];
+
+    const exceedingNoLeg = {
+      id: 'leg-exceeding-no',
+      roster_id: 1,
+      team_name: 'Team 1',
+      owner_name: 'Owner',
+      description: 'Saquon Barkley (PHI) • 80+ Rush Yards (NO)',
+      nfl_team: 'PHI',
+      odds_american: '-185',
+      odds_decimal: 1.54,
+      price_cents: 65,
+      status: 'submitted' as const,
+      kalshi_market_ticker: 'T_P_HIGH_NO',
+      kalshi_side: 'no' as const,
+    };
+
+    const { html } = render(
+      <PickModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSubmitPick={vi.fn()}
+        rosterName="Team 1"
+        activePlayers={[{ id: 'p1', name: 'Saquon Barkley', team: 'PHI', position: 'RB' }]}
+        kalshiProps={propWithHighNo}
+        initialPlayer={{ id: 'p1', name: 'Saquon Barkley', team: 'PHI', position: 'RB' }}
+        currentLeg={exceedingNoLeg}
+        maxLegOddsPercent={50}
+      />
+    );
+
+    // Preview should prompt selection and submit button must be disabled
+    expect(screen.getByText(/Select an available contract strike/i)).toBeInTheDocument();
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled/i);
+  });
 });
