@@ -566,15 +566,24 @@ def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
     max_odds = get_max_leg_odds_percent()
     leg_price = leg.get("price_cents")
-    if max_odds is not None and leg_price is not None:
+    if max_odds is not None:
+        if leg_price is None:
+            raise https_fn.HttpsError(
+                code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT,
+                message="price_cents is required when maximum odds limit is enforced",
+            )
         try:
-            if float(leg_price) > max_odds:
-                raise https_fn.HttpsError(
-                    code=https_fn.FunctionsErrorCode.FAILED_PRECONDITION,
-                    message=f"Leg odds ({leg_price}%) exceed the maximum allowed limit of {int(max_odds)}%",
-                )
+            price_float = float(leg_price)
         except (ValueError, TypeError):
-            pass
+            raise https_fn.HttpsError(
+                code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT,
+                message="price_cents must be a valid numeric probability",
+            )
+        if price_float > max_odds:
+            raise https_fn.HttpsError(
+                code=https_fn.FunctionsErrorCode.FAILED_PRECONDITION,
+                message=f"Leg odds ({leg_price}%) exceed the maximum allowed limit of {max_odds:g}%",
+            )
 
     legs = parlay_data.get("legs", [])
     updated_legs = []
