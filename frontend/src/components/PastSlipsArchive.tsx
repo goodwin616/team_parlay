@@ -16,45 +16,9 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
 
   if (!isOpen) return null;
 
-  const renderStatusBadge = (status?: string) => {
-    const s = (status || 'open').toLowerCase();
-    if (s === 'won') {
-      return (
-        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-          Won
-        </span>
-      );
-    }
-    if (s === 'lost') {
-      return (
-        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">
-          Lost
-        </span>
-      );
-    }
-    if (s === 'voided' || s === 'pushed') {
-      return (
-        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gray-500/15 text-gray-300 border border-gray-500/30">
-          {s === 'voided' ? 'Voided' : 'Pushed'}
-        </span>
-      );
-    }
-    if (s === 'locked') {
-      return (
-        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
-          Locked
-        </span>
-      );
-    }
-    return (
-      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sleeper-accent/15 text-sleeper-accent border border-sleeper-accent/30">
-        Open
-      </span>
-    );
-  };
-
   const renderOutcomeBadge = (parlay: WeeklyParlay) => {
-    if (parlay.outcome === 'won') {
+    const outcome = parlay.outcome ?? (parlay.status === 'won' || parlay.status === 'lost' ? parlay.status : undefined);
+    if (outcome === 'won') {
       const payout = (parlay.actual_payout ?? parlay.estimated_payout).toFixed(2);
       return (
         <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold px-2 py-0.5 rounded-full text-[10px]">
@@ -62,7 +26,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
         </span>
       );
     }
-    if (parlay.outcome === 'lost') {
+    if (outcome === 'lost') {
       return (
         <span className="bg-red-500/20 text-red-400 border border-red-500/40 font-bold px-2 py-0.5 rounded-full text-[10px]">
           ❌ LOST
@@ -76,22 +40,31 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
     );
   };
 
-  const renderLegOutcomeBadge = (outcome?: string) => {
-    if (outcome === 'won') {
+  const renderLegOutcomeBadge = (outcome?: string, status?: string) => {
+    const resolved =
+      outcome ??
+      (status === 'won'
+        ? 'won'
+        : status === 'lost'
+        ? 'lost'
+        : status === 'voided' || status === 'pushed'
+        ? 'void'
+        : undefined);
+    if (resolved === 'won') {
       return (
         <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
           HIT
         </span>
       );
     }
-    if (outcome === 'lost') {
+    if (resolved === 'lost') {
       return (
         <span className="bg-red-500/15 text-red-400 border border-red-500/30 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
           MISS
         </span>
       );
     }
-    if (outcome === 'void') {
+    if (resolved === 'void') {
       return (
         <span className="bg-gray-500/15 text-gray-300 border border-gray-500/30 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
           PUSH
@@ -167,7 +140,6 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                           Week {parlay.week} Parlay
                         </span>
                         {renderOutcomeBadge(parlay)}
-                        {renderStatusBadge(parlay.status)}
                         <span className="text-xs text-gray-300 font-semibold">
                           Bettor: {parlay.bettor.owner_name}
                         </span>
@@ -205,21 +177,6 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                               <div className="flex items-center space-x-1.5 flex-wrap">
                                 <span className="font-semibold text-white truncate">{leg.owner_name}</span>
                                 <span className="text-[10px] text-sleeper-muted">({leg.team_name})</span>
-                                {leg.status && (
-                                  <span
-                                    className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                                      leg.status === 'won'
-                                        ? 'bg-emerald-500/15 text-emerald-400'
-                                        : leg.status === 'lost'
-                                        ? 'bg-red-500/15 text-red-400'
-                                        : leg.status === 'voided' || leg.status === 'pushed'
-                                        ? 'bg-gray-500/15 text-gray-300'
-                                        : 'bg-sleeper-dark text-gray-400 border border-sleeper-border'
-                                    }`}
-                                  >
-                                    {leg.status}
-                                  </span>
-                                )}
                               </div>
                               <p className="text-gray-300 mt-0.5 leading-tight">{leg.description}</p>
                             </div>
@@ -227,7 +184,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                               <span className="font-mono text-xs font-bold text-sleeper-accent">
                                 {formatOddsWithCents(leg.odds_american, leg.price_cents)}
                               </span>
-                              {renderLegOutcomeBadge(leg.outcome)}
+                              {renderLegOutcomeBadge(leg.outcome, leg.status)}
                             </div>
                           </div>
                         ))}

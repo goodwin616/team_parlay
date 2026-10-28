@@ -203,7 +203,7 @@ describe('PastSlipsArchive Component', () => {
       expect(html).toContain('Week 1 Parlay');
     });
 
-    it('renders correct status badges (won, lost, voided, open, pushed)', () => {
+    it('renders outcome badges without duplicate won/lost status badges (CR-034)', () => {
       const html = renderToString(
         <PastSlipsArchive
           isOpen={true}
@@ -211,20 +211,25 @@ describe('PastSlipsArchive Component', () => {
           pastParlays={samplePastParlays}
         />
       );
-      // Won badge: emerald styling
-      expect(html).toContain('bg-emerald-500/15 text-emerald-400');
-      expect(html).toContain('Won');
+      // Won outcome badge: emerald styling with trophy and payout
+      expect(html).toContain('bg-emerald-500/20 text-emerald-400');
+      expect(html).toContain('🏆 WON ($16.50)');
 
-      // Lost badge: red styling
-      expect(html).toContain('bg-red-500/15 text-red-400');
-      expect(html).toContain('Lost');
+      // Lost outcome badge: red styling
+      expect(html).toContain('bg-red-500/20 text-red-400');
+      expect(html).toContain('❌ LOST');
 
-      // Voided badge: gray styling
-      expect(html).toContain('bg-gray-500/15 text-gray-300');
-      expect(html).toContain('Voided');
+      // In progress badge: amber styling
+      expect(html).toContain('bg-amber-500/20 text-amber-400');
+      expect(html).toContain('⏳ IN PROGRESS');
+
+      // Does NOT render duplicate renderStatusBadge text
+      expect(html).not.toMatch(/>\s*Won\s*</);
+      expect(html).not.toMatch(/>\s*Lost\s*</);
+      expect(html).not.toMatch(/>\s*Voided\s*</);
     });
 
-    it('renders open and pushed status badges when provided', () => {
+    it('renders outcome badge without open and pushed status badges (CR-034)', () => {
       const openParlay: WeeklyParlay = {
         week: 4,
         season: '2026',
@@ -258,12 +263,12 @@ describe('PastSlipsArchive Component', () => {
         />
       );
 
-      // Open badge: sleeper-accent styling
-      expect(html).toContain('bg-sleeper-accent/15 text-sleeper-accent');
-      expect(html).toContain('Open');
+      // Outcome badge renders "IN PROGRESS"
+      expect(html).toContain('⏳ IN PROGRESS');
 
-      // Pushed badge
-      expect(html).toContain('Pushed');
+      // Does NOT render old status badge strings
+      expect(html).not.toMatch(/>\s*Open\s*</);
+      expect(html).not.toMatch(/>\s*Pushed\s*</);
     });
 
     it('renders payout numbers, multipliers, and bettor attribution correctly', () => {
@@ -482,6 +487,9 @@ describe('PastSlipsArchive Component', () => {
       // PENDING chip (white/5 muted)
       expect(html).toContain('bg-white/5 text-gray-400 border border-white/10');
       expect(html).toContain('PENDING');
+
+      // CR-034: No redundant inline status chips next to team name
+      expect(html).not.toMatch(/>\s*submitted\s*</);
     });
   });
 
