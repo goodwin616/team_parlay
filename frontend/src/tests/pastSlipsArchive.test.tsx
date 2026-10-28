@@ -168,7 +168,7 @@ describe('PastSlipsArchive Component', () => {
         />
       );
       expect(html).toContain('Past Kalshi Slips Archive');
-      expect(html).toContain('Historical records • Pure archive (no grading)');
+      expect(html).toContain('Historical records • Graded via Kalshi settlement');
     });
   });
 
@@ -310,6 +310,178 @@ describe('PastSlipsArchive Component', () => {
       expect(html).toContain('Gridiron Clowns');
       expect(html).toContain('-115');
       expect(html).toContain('-130');
+    });
+  });
+
+  describe('Kalshi Outcome Grading Badges & Leg Chips', () => {
+    it('renders WON badge with trophy and dollar payout when outcome is won', () => {
+      const parlay: WeeklyParlay = {
+        week: 1,
+        season: '2026',
+        status: 'locked',
+        outcome: 'won',
+        settlement_status: 'finalized',
+        contains_sgp: false,
+        bettor: { roster_id: 1, team_name: 'Team 1', owner_name: 'Alice', points_last_week: 90 },
+        earliest_kickoff: '2026-09-10T20:15:00Z',
+        legs: [],
+        estimated_odds_american: '+200',
+        estimated_multiplier: 3.0,
+        estimated_payout: 15.0,
+        actual_payout: 15.0,
+      };
+
+      const html = cleanText(
+        renderToString(
+          <PastSlipsArchive isOpen={true} onClose={() => {}} pastParlays={[parlay]} />
+        )
+      );
+
+      expect(html).toContain('bg-emerald-500/20 text-emerald-400 border border-emerald-500/40');
+      expect(html).toContain('🏆 WON ($15.00)');
+    });
+
+    it('renders LOST badge when outcome is lost', () => {
+      const parlay: WeeklyParlay = {
+        week: 2,
+        season: '2026',
+        status: 'locked',
+        outcome: 'lost',
+        settlement_status: 'finalized',
+        contains_sgp: false,
+        bettor: { roster_id: 2, team_name: 'Team 2', owner_name: 'Bob', points_last_week: 85 },
+        earliest_kickoff: '2026-09-17T20:15:00Z',
+        legs: [],
+        estimated_odds_american: '+300',
+        estimated_multiplier: 4.0,
+        estimated_payout: 20.0,
+        actual_payout: 0.0,
+      };
+
+      const html = cleanText(
+        renderToString(
+          <PastSlipsArchive isOpen={true} onClose={() => {}} pastParlays={[parlay]} />
+        )
+      );
+
+      expect(html).toContain('bg-red-500/20 text-red-400 border border-red-500/40');
+      expect(html).toContain('❌ LOST');
+    });
+
+    it('renders IN PROGRESS badge when outcome is pending or undefined', () => {
+      const parlayPending: WeeklyParlay = {
+        week: 3,
+        season: '2026',
+        status: 'locked',
+        outcome: 'pending',
+        settlement_status: 'pending',
+        contains_sgp: false,
+        bettor: { roster_id: 3, team_name: 'Team 3', owner_name: 'Charlie', points_last_week: 80 },
+        earliest_kickoff: '2026-09-24T20:15:00Z',
+        legs: [],
+        estimated_odds_american: '+150',
+        estimated_multiplier: 2.5,
+        estimated_payout: 12.5,
+        actual_payout: null,
+      };
+
+      const html = cleanText(
+        renderToString(
+          <PastSlipsArchive isOpen={true} onClose={() => {}} pastParlays={[parlayPending]} />
+        )
+      );
+
+      expect(html).toContain('bg-amber-500/20 text-amber-400 border border-amber-500/40');
+      expect(html).toContain('⏳ IN PROGRESS');
+    });
+
+    it('renders individual leg HIT, MISS, PUSH, and PENDING chips', () => {
+      const parlay: WeeklyParlay = {
+        week: 4,
+        season: '2026',
+        status: 'locked',
+        outcome: 'pending',
+        settlement_status: 'pending',
+        contains_sgp: false,
+        bettor: { roster_id: 1, team_name: 'Team 1', owner_name: 'Alice', points_last_week: 90 },
+        earliest_kickoff: '2026-10-01T20:15:00Z',
+        legs: [
+          {
+            id: 'l1',
+            roster_id: 1,
+            team_name: 'Team 1',
+            owner_name: 'Alice',
+            nfl_team: 'KC',
+            description: 'Mahomes 2+ TDs',
+            odds_american: '-110',
+            odds_decimal: 1.91,
+            status: 'submitted',
+            outcome: 'won',
+          },
+          {
+            id: 'l2',
+            roster_id: 2,
+            team_name: 'Team 2',
+            owner_name: 'Bob',
+            nfl_team: 'PHI',
+            description: 'Barkley Anytime TD',
+            odds_american: '+100',
+            odds_decimal: 2.0,
+            status: 'submitted',
+            outcome: 'lost',
+          },
+          {
+            id: 'l3',
+            roster_id: 3,
+            team_name: 'Team 3',
+            owner_name: 'Charlie',
+            nfl_team: 'BUF',
+            description: 'Allen 250+ Pass Yds',
+            odds_american: '-115',
+            odds_decimal: 1.87,
+            status: 'submitted',
+            outcome: 'void',
+          },
+          {
+            id: 'l4',
+            roster_id: 4,
+            team_name: 'Team 4',
+            owner_name: 'Dave',
+            nfl_team: 'DET',
+            description: 'Goff 2+ Pass TDs',
+            odds_american: '+120',
+            odds_decimal: 2.2,
+            status: 'submitted',
+            outcome: 'pending',
+          },
+        ],
+        estimated_odds_american: '+1000',
+        estimated_multiplier: 11.0,
+        estimated_payout: 55.0,
+        actual_payout: null,
+      };
+
+      const html = cleanText(
+        renderToString(
+          <PastSlipsArchive isOpen={true} onClose={() => {}} pastParlays={[parlay]} />
+        )
+      );
+
+      // HIT chip (emerald)
+      expect(html).toContain('bg-emerald-500/15 text-emerald-400 border border-emerald-500/30');
+      expect(html).toContain('HIT');
+
+      // MISS chip (red)
+      expect(html).toContain('bg-red-500/15 text-red-400 border border-red-500/30');
+      expect(html).toContain('MISS');
+
+      // PUSH chip (gray)
+      expect(html).toContain('bg-gray-500/15 text-gray-300 border border-gray-500/30');
+      expect(html).toContain('PUSH');
+
+      // PENDING chip (white/5 muted)
+      expect(html).toContain('bg-white/5 text-gray-400 border border-white/10');
+      expect(html).toContain('PENDING');
     });
   });
 

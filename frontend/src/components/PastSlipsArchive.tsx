@@ -53,6 +53,58 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
     );
   };
 
+  const renderOutcomeBadge = (parlay: WeeklyParlay) => {
+    if (parlay.outcome === 'won') {
+      const payout = (parlay.actual_payout ?? parlay.estimated_payout).toFixed(2);
+      return (
+        <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold px-2 py-0.5 rounded-full text-[10px]">
+          {`🏆 WON ($${payout})`}
+        </span>
+      );
+    }
+    if (parlay.outcome === 'lost') {
+      return (
+        <span className="bg-red-500/20 text-red-400 border border-red-500/40 font-bold px-2 py-0.5 rounded-full text-[10px]">
+          ❌ LOST
+        </span>
+      );
+    }
+    return (
+      <span className="bg-amber-500/20 text-amber-400 border border-amber-500/40 font-bold px-2 py-0.5 rounded-full text-[10px]">
+        ⏳ IN PROGRESS
+      </span>
+    );
+  };
+
+  const renderLegOutcomeBadge = (outcome?: string) => {
+    if (outcome === 'won') {
+      return (
+        <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+          HIT
+        </span>
+      );
+    }
+    if (outcome === 'lost') {
+      return (
+        <span className="bg-red-500/15 text-red-400 border border-red-500/30 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+          MISS
+        </span>
+      );
+    }
+    if (outcome === 'void') {
+      return (
+        <span className="bg-gray-500/15 text-gray-300 border border-gray-500/30 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+          PUSH
+        </span>
+      );
+    }
+    return (
+      <span className="bg-white/5 text-gray-400 border border-white/10 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+        PENDING
+      </span>
+    );
+  };
+
   return (
     <div
       data-testid="archive-backdrop"
@@ -69,7 +121,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
             <History className="w-5 h-5 text-sleeper-accent" />
             <div>
               <h3 className="text-base font-bold text-white">Past Kalshi Slips Archive</h3>
-              <p className="text-[11px] text-sleeper-muted">Historical records • Pure archive (no grading)</p>
+              <p className="text-[11px] text-sleeper-muted">Historical records • Graded via Kalshi settlement</p>
             </div>
           </div>
           <button
@@ -114,6 +166,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                         <span className="text-xs font-black uppercase text-sleeper-accent font-mono">
                           Week {parlay.week} Parlay
                         </span>
+                        {renderOutcomeBadge(parlay)}
                         {renderStatusBadge(parlay.status)}
                         <span className="text-xs text-gray-300 font-semibold">
                           Bettor: {parlay.bettor.owner_name}
@@ -170,9 +223,12 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                               </div>
                               <p className="text-gray-300 mt-0.5 leading-tight">{leg.description}</p>
                             </div>
-                            <span className="font-mono text-xs font-bold text-sleeper-accent shrink-0">
-                              {formatOddsWithCents(leg.odds_american, leg.price_cents)}
-                            </span>
+                            <div className="flex items-center space-x-2 shrink-0">
+                              <span className="font-mono text-xs font-bold text-sleeper-accent">
+                                {formatOddsWithCents(leg.odds_american, leg.price_cents)}
+                              </span>
+                              {renderLegOutcomeBadge(leg.outcome)}
+                            </div>
                           </div>
                         ))}
                       </div>
