@@ -4,7 +4,6 @@ import {
   ArrowLeftRight,
   UserCheck,
   LogOut,
-  RefreshCw,
 } from 'lucide-react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -435,7 +434,6 @@ export const App: React.FC = () => {
   const syncedLeagueRef = useRef<string | null>(null);
   const currentStoredWeekRef = useRef<number | null>(null);
   const liveNflWeekRef = useRef<number | null>(null);
-  const syncLeagueFnRef = useRef<((forceSync?: boolean) => Promise<void>) | null>(null);
 
   // Modals & Live Kalshi / Sleeper Player Board State
   const [isPickOpen, setIsPickOpen] = useState(false);
@@ -911,7 +909,6 @@ export const App: React.FC = () => {
       }
     };
 
-    syncLeagueFnRef.current = syncRealSleeperLeague;
     let isSubscribed = true;
 
     // Check live NFL week directly from Sleeper so transitions to a new week are caught immediately
@@ -1076,7 +1073,6 @@ export const App: React.FC = () => {
 
     return () => {
       isSubscribed = false;
-      syncLeagueFnRef.current = null;
       unsubLeague();
       unsubTeams();
       unsubParlays();
@@ -1212,20 +1208,6 @@ export const App: React.FC = () => {
                 <ArrowLeftRight className="w-3.5 h-3.5 text-sleeper-accent shrink-0" />
                 <span className="hidden xs:inline">Switch League</span>
               </button>
-
-              {!isDemo && (
-                <button
-                  type="button"
-                  onClick={() => syncLeagueFnRef.current?.(true)}
-                  disabled={isRealLeagueLoading}
-                  aria-label="Sync League Data"
-                  title="Sync latest week and scores from Sleeper"
-                  className="h-9 px-2.5 rounded-xl bg-sleeper-dark border border-white/10 text-xs font-medium text-gray-300 hover:text-white hover:border-white/25 transition inline-flex items-center space-x-1.5 shrink-0 active:scale-95 cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-sleeper-accent shrink-0 ${isRealLeagueLoading ? 'animate-spin' : ''}`} />
-                  <span className="hidden xs:inline">Sync</span>
-                </button>
-              )}
             </div>
 
             {/* Action Pills */}
