@@ -54,13 +54,14 @@ When managers contribute a pick to a weekly slip:
 
 ### D. Anti-Tamper, Security & Audit Log Data
 To prevent tampering, unauthorized pick alteration, or ballot stuffing:
-- **Salted PIN Hashes:** If an optional roster PIN is configured, we store only a cryptographically salted SHA-256 hash (`pin_secret_salt`) alongside a unique salt. Raw PINs are never stored in plaintext.
-- **Server-Side Audit Logs:** Actions modifying slips or roster claims record:
-  - Action performed (e.g., `submit_leg`, `claim_roster`).
-  - Authenticated Firebase UID.
-  - Client IP address (for rate limiting and DDoS/abuse mitigation).
-  - Client User-Agent string.
-  - ISO 8601 UTC timestamp.
+- **Google OAuth Authentication:** Fantasy team claiming and pick submissions are authenticated strictly via Google OAuth / Firebase Authentication (validated server-side via `actor_from_auth`). Team Parlay does not use, store, or manage passwords or PINs.
+- **Server-Side Audit Logs:** Actions modifying slips or roster claims record an unalterable audit trail in Cloud Firestore matching our server implementation (`functions/auth_utils.py` and `functions/main.py`):
+  - **Authenticated Actor:** Google Firebase UID, display name, verified email, and profile photo URL.
+  - **Action Type:** Action executed (`team_claimed`, `team_selected`, or `leg_submitted`).
+  - **Context:** Sleeper roster ID and fantasy week number.
+  - **Pick States:** Before and after pick states when a leg is added or updated.
+  - **Timestamp:** ISO 8601 UTC timestamp (`timestamp` and `created_at`).
+- **No Client IP or User-Agent Logging:** Client IP addresses and User-Agents are **not** captured or written to application database audit logs.
 
 ### E. Browser Local Storage
 Team Parlay does not use third-party advertising cookies or cross-site tracking beacons. We utilize standard browser `localStorage` solely for essential functionality:

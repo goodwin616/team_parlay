@@ -208,7 +208,6 @@ Copy `functions/.env.example` to `functions/.env`:
 | `KALSHI_PRIVATE_KEY_PATH` | Optional | `"./kalshi_private_key.key"` | Local path to Kalshi RSA private key |
 | `KALSHI_PRIVATE_KEY_PEM` | Optional | `""` | Direct PEM string for private key in cloud deployments |
 | `MAX_LEG_ODDS_PERCENT` | Optional | `""` (no cap) | Max probability percentage for player props (e.g. `50` for 50%) |
-| `PIN_SECRET_SALT` | Yes | `""` | Secret salt used when hashing team claim PINs |
 
 ### Frontend Environment Variables (`frontend/.env`)
 
@@ -288,7 +287,7 @@ The production web app is accessible at **[parlay.goodwin.io](https://parlay.goo
 Team Parlay takes user privacy, account security, and data integrity seriously:
 - **No Wagering or Financial Transactions**: Informational fantasy league coordination tool only; not a gambling operator.
 - **Zero Data Selling**: User data, Google profile details, and pick selections are never sold, rented, or shared with third-party advertisers or data brokers.
-- **Google OAuth & Audit Logs**: Transparent authentication data handling under Google API Services User Data Policy, salted SHA-256 PIN hashes, and server-side audit logs.
+- **Google OAuth & Audit Logs**: Transparent authentication data handling under Google API Services User Data Policy, Google OAuth validation, and immutable server-side audit logs.
 - **Data Subject Rights**: Full CalOPPA, GDPR, and UK GDPR disclosures with prompt deletion rights via [privacy@goodwin.io](mailto:privacy@goodwin.io).
 
 Read our full legal disclosures in [PRIVACY.md](PRIVACY.md).

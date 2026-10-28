@@ -98,10 +98,12 @@ describe('PrivacyModal Component', () => {
     expect(html).toContain('Google OAuth Sign-In');
     expect(html).toContain('Google API Services User Data Policy');
 
-    // Anti-Tamper & Security (Salted SHA-256 PIN hashes, audit logs)
+    // Anti-Tamper & Security (Google OAuth verification, audit logs)
     expect(html).toContain('Anti-Tamper Audit Logs');
-    expect(html).toContain('pin_secret_salt');
-    expect(html).toContain('User-Agent');
+    expect(html).toContain('actor_from_auth');
+    expect(html).toContain('authenticated Google account (UID, name, email)');
+    expect(html).not.toContain('pin_secret_salt');
+    expect(html).not.toContain('User-Agent');
 
     // Browser Storage (localStorage)
     expect(html).toContain('localStorage');

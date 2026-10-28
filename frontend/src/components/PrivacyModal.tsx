@@ -113,7 +113,7 @@ export const PrivacyModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 <span>Anti-Tamper Audit Logs</span>
               </div>
               <p className="text-[11px] text-gray-400">
-                Salted SHA-256 PIN hashes and server-side audit logs (IP, User-Agent, timestamp) protect pick integrity.
+                Authentication secured via Google OAuth; audit trails record authenticated Google account (UID, name, email), roster claimed, pick submissions, and UTC timestamps.
               </p>
             </div>
 
@@ -147,7 +147,7 @@ export const PrivacyModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   <strong className="text-gray-200">Parlay Picks:</strong> Submitted Kalshi market tickers, game lines, player props, predicted outcomes, and submission timestamps.
                 </li>
                 <li>
-                  <strong className="text-gray-200">Security & Tamper Prevention:</strong> Salted SHA-256 PIN hashes (<code className="text-gray-300">pin_secret_salt</code>) and server-side audit logs capturing action, UID, IP address, and User-Agent.
+                  <strong className="text-gray-200">Security & Tamper Prevention:</strong> Authenticated strictly via Google OAuth (<code className="text-gray-300">actor_from_auth</code>) with server-side audit logs recording authenticated Google account (UID, name, email), roster claimed, pick submissions, and UTC timestamps.
                 </li>
                 <li>
                   <strong className="text-gray-200">Browser Storage:</strong> Client <code className="text-gray-300">localStorage</code> used strictly for auth state persistence, odds display preferences (<code className="text-gray-300">parlay_odds_format</code>), and recent leagues.
