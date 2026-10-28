@@ -34,28 +34,26 @@ export const BettorSpotlightSkeleton: React.FC<{ className?: string }> = ({ clas
     {/* Subtle decorative glow */}
     <div className="absolute top-0 right-0 -mr-8 -mt-8 w-24 h-24 rounded-full bg-amber-500/5 blur-xl pointer-events-none" />
 
-    <div className="flex items-start justify-between gap-3">
-      <div className="flex items-center space-x-3.5 min-w-0 flex-1">
-        {/* Flame placeholder icon */}
-        <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/15 shrink-0 flex items-center justify-center text-amber-400/30">
-          <span className="text-lg">🔥</span>
-        </div>
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex items-center space-x-2">
-            <div className="h-3 w-28 sm:w-32 bg-amber-400/20 rounded" />
-            <div className="h-3 w-16 bg-white/5 rounded" />
-          </div>
-          {/* Pulsing gradient placeholder for title and bettor */}
-          <div className="h-5 sm:h-6 w-44 sm:w-60 bg-gradient-to-r from-white/15 via-white/10 to-white/5 rounded-lg" />
-          {/* Stake description placeholder */}
-          <div className="h-3.5 w-48 sm:w-64 bg-white/5 rounded" />
-        </div>
+    {/* Main Row: Flame Icon + Spotlight Title & Team Name */}
+    <div className="flex items-center space-x-3.5 min-w-0">
+      {/* Flame placeholder icon */}
+      <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/15 shrink-0 flex items-center justify-center text-amber-400/30">
+        <span className="text-lg">🔥</span>
       </div>
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="flex items-center space-x-2">
+          <div className="h-3 w-28 sm:w-32 bg-amber-400/20 rounded" />
+          <div className="h-3 w-16 bg-white/5 rounded-full" />
+        </div>
+        {/* Pulsing gradient placeholder for title and bettor */}
+        <div className="h-5 sm:h-6 w-44 sm:w-60 bg-gradient-to-r from-white/15 via-white/10 to-white/5 rounded-lg" />
+      </div>
+    </div>
 
-      {/* Stake due badge placeholder */}
-      <div className="shrink-0">
-        <div className="h-7 w-28 rounded-full bg-emerald-500/10 border border-emerald-500/15" />
-      </div>
+    {/* Sub-row: Points & Stake Due Pill placeholders */}
+    <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 gap-2">
+      <div className="h-3.5 w-28 sm:w-36 bg-white/5 rounded" />
+      <div className="h-6 w-24 sm:w-28 rounded-full bg-emerald-500/10 border border-emerald-500/15 shrink-0" />
     </div>
   </section>
 );

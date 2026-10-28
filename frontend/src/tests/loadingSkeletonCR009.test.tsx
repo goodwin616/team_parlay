@@ -19,6 +19,7 @@ vi.mock('../services/auth', async (importOriginal) => {
 });
 
 import { App } from '../App';
+import { saveCachedTeamId } from '../services/auth';
 
 function cleanText(html: string): string {
   return html.replace(/<!--.*?-->/g, '');
@@ -83,7 +84,7 @@ describe('CR-009: Loading Skeletons & Flash Mitigation', () => {
       expect(html).toContain('rounded-xl bg-white/5 border border-white/5');
     });
 
-    it('renders BettorSpotlightSkeleton with pulsing gradient placeholders for title, bettor, and stake badge', () => {
+    it('renders BettorSpotlightSkeleton with pulsing gradient placeholders for title, bettor, and sub-row stake badge (CR-019)', () => {
       const html = renderToString(<BettorSpotlightSkeleton />);
       expect(html).toContain('data-testid="bettor-spotlight-skeleton"');
       // Gradient background matching Sleeper BettorBanner
@@ -92,10 +93,12 @@ describe('CR-009: Loading Skeletons & Flash Mitigation', () => {
       expect(html).toContain('bg-gradient-to-r from-white/15 via-white/10 to-white/5');
       // Flame placeholder container
       expect(html).toContain('bg-amber-500/10');
-      // Stake due placeholder badge
+      // Stake due placeholder badge in sub-row
       expect(html).toContain('bg-emerald-500/10');
+      // Sub-row border matching BettorBanner
+      expect(html).toContain('border-t border-white/5');
       // Flame icon vertical centering matching BettorBanner (CR-013)
-      expect(html).toContain('flex items-center space-x-3.5 min-w-0 flex-1');
+      expect(html).toContain('flex items-center space-x-3.5 min-w-0');
       expect(html).not.toMatch(/bg-amber-500\/10[^"]*mt-0\.5/);
     });
 
@@ -214,6 +217,28 @@ describe('CR-009: Loading Skeletons & Flash Mitigation', () => {
 
       // None of the legs should be claimed / highlighted as current user's leg
       expect(html).not.toContain('(You)');
+    });
+
+    it('hides "Team " in brand title on small screens using hidden sm:inline (CR-019)', () => {
+      globalThis.window.location = {
+        pathname: '/demo',
+        search: '',
+      } as any;
+
+      const html = renderToString(<App />);
+      expect(html).toContain('<span class="hidden sm:inline">Team </span>Parlay Tracker');
+    });
+
+    it('renders active manager name with expanded mobile width classes (CR-019)', () => {
+      globalThis.window.location = {
+        pathname: '/demo',
+        search: '',
+      } as any;
+      saveCachedTeamId('demo', 1, 'user_blake');
+
+      const html = renderToString(<App />);
+      expect(html).toContain('Switch Team: currently viewing Blake');
+      expect(html).toContain('max-w-[120px] xs:max-w-[150px] sm:max-w-[180px] md:max-w-none font-bold text-white');
     });
   });
 });

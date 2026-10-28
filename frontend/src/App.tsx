@@ -348,7 +348,15 @@ export const App: React.FC = () => {
   // League Data State
   const [season, setSeason] = useState<string>(() => String(new Date().getFullYear()));
   const [teams, setTeams] = useState<TeamProfile[]>(MOCK_TEAMS);
-  const [currentRosterId, setCurrentRosterId] = useState<number | null>(null);
+  const [currentRosterId, setCurrentRosterId] = useState<number | null>(() => {
+    if (typeof window !== 'undefined') {
+      const lid = getLeagueIdFromLocation(window.location);
+      if (lid && user) {
+        return getCachedTeamId(lid, user.uid);
+      }
+    }
+    return null;
+  });
   const userRef = useRef(user);
   userRef.current = user;
   const currentRosterIdRef = useRef(currentRosterId);
@@ -1130,7 +1138,7 @@ export const App: React.FC = () => {
                 <span className="text-xl shrink-0">🏈</span>
                 <div className="min-w-0">
                   <h1 className="text-xs sm:text-sm font-black tracking-wider text-white leading-none truncate">
-                    Team Parlay Tracker
+                    <span className="hidden sm:inline">Team </span>Parlay Tracker
                   </h1>
                 </div>
               </button>
@@ -1198,7 +1206,7 @@ export const App: React.FC = () => {
                       : 'Click to Switch or Claim Team'
                   }
                 >
-                  <span className="truncate max-w-[70px] xs:max-w-[100px] sm:max-w-[130px] md:max-w-none font-bold text-white">
+                  <span className="truncate max-w-[120px] xs:max-w-[150px] sm:max-w-[180px] md:max-w-none font-bold text-white">
                     {currentTeam.owner_name}
                   </span>
                   {isClaimedByOther && (
