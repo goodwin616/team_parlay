@@ -18,7 +18,7 @@ vi.mock('../services/auth', async (importOriginal) => {
   };
 });
 
-import { App } from '../App';
+import { App, EMPTY_PARLAY } from '../App';
 import { saveCachedTeamId } from '../services/auth';
 
 function cleanText(html: string): string {
@@ -163,6 +163,9 @@ describe('CR-009: Loading Skeletons & Flash Mitigation', () => {
       expect(html).toContain('data-testid="parlay-card-skeleton"');
       expect(html).toContain('data-testid="header-user-skeleton"');
 
+      // Duplicate header skeleton should NOT be rendered inside main
+      expect(html).not.toContain('data-testid="header-skeleton"');
+
       // Mock parlay data must NOT be rendered / flashed
       expect(html).not.toContain('Philly Special');
       expect(html).not.toContain('Gridiron Clowns');
@@ -239,6 +242,12 @@ describe('CR-009: Loading Skeletons & Flash Mitigation', () => {
       const html = renderToString(<App />);
       expect(html).toContain('Switch Team: currently viewing Blake');
       expect(html).toContain('max-w-[120px] xs:max-w-[150px] sm:max-w-[180px] md:max-w-none font-bold text-white');
+    });
+
+    it('ensures EMPTY_PARLAY has no legs and isRealDataLoaded is false', () => {
+      expect(EMPTY_PARLAY.legs).toEqual([]);
+      expect(EMPTY_PARLAY.isRealDataLoaded).toBe(false);
+      expect(EMPTY_PARLAY.bettor.roster_id).toBe(0);
     });
   });
 });

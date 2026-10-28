@@ -328,9 +328,7 @@ function getPlayerContracts(
           yes_cents: yCents,
           no_cents: nCents,
           yes_odds:
-            m.yes_odds ||
-            m.yes_odds_american ||
-            kalshiCentsToAmerican(yCents),
+            m.yes_odds || m.yes_odds_american || kalshiCentsToAmerican(yCents),
           no_odds:
             m.no_odds || m.no_odds_american || kalshiCentsToAmerican(nCents),
           kickoff_time: m.kickoff_time,
@@ -437,15 +435,9 @@ function resolveInitialPlayerPropState(
   let category = "Touchdowns";
   if (matchedLiveProp?.stat_category) {
     category = String(matchedLiveProp.stat_category);
-  } else if (
-    ticker.startsWith("KXNFLPASSYDS") ||
-    desc.includes("Pass Yards")
-  ) {
+  } else if (ticker.startsWith("KXNFLPASSYDS") || desc.includes("Pass Yards")) {
     category = "Pass Yards";
-  } else if (
-    ticker.startsWith("KXNFLPASSTD") ||
-    desc.includes("Passing TD")
-  ) {
+  } else if (ticker.startsWith("KXNFLPASSTD") || desc.includes("Passing TD")) {
     category = "Pass TDs";
   } else if (
     ticker.startsWith("KXNFLRSHYDS") ||
@@ -559,7 +551,8 @@ export const PickModal: React.FC<Props> = ({
     initialTab ||
       (isGameInitial
         ? "mainline"
-        : activePlayers.length === 0 && (kalshiGames.length > 0 || SAMPLE_KALSHI_GAMES.length > 0)
+        : activePlayers.length === 0 &&
+            (kalshiGames.length > 0 || SAMPLE_KALSHI_GAMES.length > 0)
           ? "mainline"
           : "prop"),
   );
@@ -1084,7 +1077,7 @@ export const PickModal: React.FC<Props> = ({
         <div className="flex justify-between items-center px-5 py-4 border-b border-sleeper-border bg-sleeper-card shrink-0">
           <div>
             <div className="text-[11px] font-bold text-sleeper-accent uppercase tracking-wider flex items-center space-x-2">
-              <span>{rosterName} • Kalshi NFL Markets</span>
+              <span>Kalshi NFL Markets</span>
               <span
                 className={`text-[9px] px-1.5 py-0.5 rounded border inline-flex items-center space-x-1 ${
                   isLive
@@ -1277,8 +1270,8 @@ export const PickModal: React.FC<Props> = ({
                                   <ChevronUp className="w-3.5 h-3.5 text-sleeper-accent" />
                                   <span>
                                     See {evenWindow.start} more option
-                                    {evenWindow.start > 1 ? "s" : ""} above (lower
-                                    lines)
+                                    {evenWindow.start > 1 ? "s" : ""} above
+                                    (lower lines)
                                   </span>
                                 </>
                               )}
@@ -1295,7 +1288,8 @@ export const PickModal: React.FC<Props> = ({
                               )
                               .map((contract, sliceIdx) => {
                                 const actualIdx =
-                                  (showMoreAbove ? 0 : evenWindow.start) + sliceIdx;
+                                  (showMoreAbove ? 0 : evenWindow.start) +
+                                  sliceIdx;
                                 const isContractSelected =
                                   selectedContractIdx === actualIdx;
                                 return (
@@ -1315,8 +1309,12 @@ export const PickModal: React.FC<Props> = ({
 
                                     <div className="flex items-center space-x-2 shrink-0">
                                       {(() => {
-                                        const isYesDisabled = isExceedingMax(contract.yes_cents);
-                                        const isNoDisabled = isExceedingMax(contract.no_cents);
+                                        const isYesDisabled = isExceedingMax(
+                                          contract.yes_cents,
+                                        );
+                                        const isNoDisabled = isExceedingMax(
+                                          contract.no_cents,
+                                        );
                                         return (
                                           <>
                                             <button
@@ -1324,14 +1322,16 @@ export const PickModal: React.FC<Props> = ({
                                               disabled={isYesDisabled}
                                               onClick={() => {
                                                 if (isYesDisabled) return;
-                                                setSelectedContractIdx(actualIdx);
+                                                setSelectedContractIdx(
+                                                  actualIdx,
+                                                );
                                                 setSelectedSide("yes");
                                               }}
                                               className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition ${
                                                 isYesDisabled
                                                   ? "opacity-30 cursor-not-allowed bg-sleeper-card/40 text-gray-500 border-sleeper-border/50"
                                                   : isContractSelected &&
-                                                    selectedSide === "yes"
+                                                      selectedSide === "yes"
                                                     ? "bg-emerald-500 text-black border-emerald-400 shadow"
                                                     : "bg-sleeper-card text-gray-300 border-sleeper-border hover:border-emerald-500/50"
                                               }`}
@@ -1354,14 +1354,16 @@ export const PickModal: React.FC<Props> = ({
                                               disabled={isNoDisabled}
                                               onClick={() => {
                                                 if (isNoDisabled) return;
-                                                setSelectedContractIdx(actualIdx);
+                                                setSelectedContractIdx(
+                                                  actualIdx,
+                                                );
                                                 setSelectedSide("no");
                                               }}
                                               className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition ${
                                                 isNoDisabled
                                                   ? "opacity-30 cursor-not-allowed bg-sleeper-card/40 text-gray-500 border-sleeper-border/50"
                                                   : isContractSelected &&
-                                                    selectedSide === "no"
+                                                      selectedSide === "no"
                                                     ? "bg-red-500 text-white border-red-400 shadow"
                                                     : "bg-sleeper-card text-gray-300 border-sleeper-border hover:border-red-500/50"
                                               }`}
@@ -1401,7 +1403,9 @@ export const PickModal: React.FC<Props> = ({
                                     Hide{" "}
                                     {availableContracts.length - evenWindow.end}{" "}
                                     higher milestone
-                                    {availableContracts.length - evenWindow.end > 1
+                                    {availableContracts.length -
+                                      evenWindow.end >
+                                    1
                                       ? "s"
                                       : ""}{" "}
                                     below
@@ -1411,9 +1415,12 @@ export const PickModal: React.FC<Props> = ({
                                 <>
                                   <ChevronDown className="w-3.5 h-3.5 text-sleeper-accent" />
                                   <span>
-                                    See {availableContracts.length - evenWindow.end}{" "}
+                                    See{" "}
+                                    {availableContracts.length - evenWindow.end}{" "}
                                     more option
-                                    {availableContracts.length - evenWindow.end > 1
+                                    {availableContracts.length -
+                                      evenWindow.end >
+                                    1
                                       ? "s"
                                       : ""}{" "}
                                     below (higher lines)

@@ -239,6 +239,27 @@ const MOCK_PAST_PARLAYS: WeeklyParlay[] = [
   },
 ];
 
+export const EMPTY_PARLAY: WeeklyParlay = {
+  week: 1,
+  season: String(new Date().getFullYear()),
+  status: 'open',
+  contains_sgp: false,
+  isRealDataLoaded: false,
+  bettor: {
+    roster_id: 0,
+    team_name: '',
+    owner_name: '',
+    points_last_week: 0,
+  },
+  earliest_kickoff: null,
+  legs: [],
+  estimated_odds_american: '+100',
+  estimated_multiplier: 1.0,
+  estimated_payout: 5.0,
+  actual_payout: null,
+  actual_odds_american: null,
+};
+
 export interface SyncFirestoreTeamsOptions {
   snapshotDocs: Array<{ data: () => any }>;
   isDemo: boolean;
@@ -347,7 +368,15 @@ export const App: React.FC = () => {
 
   // League Data State
   const [season, setSeason] = useState<string>(() => String(new Date().getFullYear()));
-  const [teams, setTeams] = useState<TeamProfile[]>(MOCK_TEAMS);
+  const [teams, setTeams] = useState<TeamProfile[]>(() => {
+    if (typeof window !== 'undefined') {
+      const initialId = getLeagueIdFromLocation(window.location);
+      if (initialId && initialId.toLowerCase() === 'demo') {
+        return MOCK_TEAMS;
+      }
+    }
+    return [];
+  });
   const [currentRosterId, setCurrentRosterId] = useState<number | null>(() => {
     if (typeof window !== 'undefined') {
       const lid = getLeagueIdFromLocation(window.location);
@@ -368,11 +397,19 @@ export const App: React.FC = () => {
         return { ...INITIAL_PARLAY, isRealDataLoaded: true };
       }
     }
-    return INITIAL_PARLAY;
+    return EMPTY_PARLAY;
   });
   const parlayRef = useRef(parlay);
   parlayRef.current = parlay;
-  const [pastParlays, setPastParlays] = useState<WeeklyParlay[]>(MOCK_PAST_PARLAYS);
+  const [pastParlays, setPastParlays] = useState<WeeklyParlay[]>(() => {
+    if (typeof window !== 'undefined') {
+      const initialId = getLeagueIdFromLocation(window.location);
+      if (initialId && initialId.toLowerCase() === 'demo') {
+        return MOCK_PAST_PARLAYS;
+      }
+    }
+    return [];
+  });
   const [oddsFormat, setOddsFormat] = useState<OddsFormat>(() => {
     if (typeof window !== 'undefined') {
       const saved = window.localStorage.getItem('parlay_odds_format');
@@ -603,9 +640,17 @@ export const App: React.FC = () => {
       setLeagueId(nextId);
       setIsLoadingLeague(Boolean(nextId && !isNextDemo));
       if (nextId && !isNextDemo) {
-        setParlay((prev) => ({ ...prev, isRealDataLoaded: false }));
+        setTeams([]);
+        setParlay(EMPTY_PARLAY);
+        setPastParlays([]);
       } else if (nextId && isNextDemo) {
+        setTeams(MOCK_TEAMS);
         setParlay({ ...INITIAL_PARLAY, isRealDataLoaded: true });
+        setPastParlays(MOCK_PAST_PARLAYS);
+      } else {
+        setTeams([]);
+        setParlay(EMPTY_PARLAY);
+        setPastParlays([]);
       }
     };
     window.addEventListener('popstate', onPopState);
@@ -617,6 +662,9 @@ export const App: React.FC = () => {
       window.history.pushState({}, '', '/');
       setLeagueId(null);
       setIsLoadingLeague(false);
+      setTeams([]);
+      setParlay(EMPTY_PARLAY);
+      setPastParlays([]);
       setRecentLeagues(getRecentLeagues());
       return;
     }
@@ -624,9 +672,13 @@ export const App: React.FC = () => {
     const isNextDemo = nextLeagueId.toLowerCase() === 'demo';
     setIsLoadingLeague(!isNextDemo);
     if (!isNextDemo) {
-      setParlay((prev) => ({ ...prev, isRealDataLoaded: false }));
+      setTeams([]);
+      setParlay(EMPTY_PARLAY);
+      setPastParlays([]);
     } else {
+      setTeams(MOCK_TEAMS);
       setParlay({ ...INITIAL_PARLAY, isRealDataLoaded: true });
+      setPastParlays(MOCK_PAST_PARLAYS);
     }
     setLeagueId(nextLeagueId);
     saveRecentLeague(nextLeagueId);
@@ -694,6 +746,10 @@ export const App: React.FC = () => {
       setIsLoadingLeague(false);
     } else {
       setIsLoadingLeague(true);
+      setTeams((prev) => (prev === MOCK_TEAMS ? [] : prev));
+      setParlay((prev) =>
+        prev.legs.some((l) => l.id === 'l1' && l.owner_name === 'Blake') ? EMPTY_PARLAY : prev
+      );
       setPastParlays([]);
     }
 
@@ -817,7 +873,11 @@ export const App: React.FC = () => {
         };
 
         setParlay((prev) => {
+          const isPrevDemo = prev.legs.some((l) => l.id === 'l1' && l.owner_name === 'Blake');
           const hasSubmittedForThisLeague =
+            !isPrevDemo &&
+            Boolean(prev.isRealDataLoaded) &&
+            prev.legs.length > 0 &&
             prev.legs.some((l) => l.status === 'submitted') &&
             prev.legs.every((l) => builtTeams.some((t) => t.roster_id === l.roster_id));
           return hasSubmittedForThisLeague
@@ -913,7 +973,6 @@ export const App: React.FC = () => {
           setLeagueName(name);
           saveRecentLeague(leagueId, name);
           setRecentLeagues(getRecentLeagues());
-          setIsLoadingLeague(false);
         } else if (!isDemo) {
           const leagueKey = `${leagueId}_${authKey}`;
           if (syncedLeagueRef.current !== leagueKey) {
@@ -1314,7 +1373,7 @@ export const App: React.FC = () => {
             </div>
           )}
           {isRealLeagueLoading ? (
-            <LeagueSkeleton />
+            <LeagueSkeleton showHeader={false} />
           ) : (
             <>
               {isLoadingLeague && (
