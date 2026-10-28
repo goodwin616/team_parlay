@@ -398,6 +398,7 @@ export const App: React.FC = () => {
   const [kalshiProps, setKalshiProps] = useState<any[]>([]);
   const [liveMarketCount, setLiveMarketCount] = useState<number>(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [maxLegOddsPercent, setMaxLegOddsPercent] = useState<number | null>(null);
   const lastKalshiFetchRef = useRef<number>(0);
 
   // Close profile menu when clicking outside
@@ -470,11 +471,15 @@ export const App: React.FC = () => {
           live_market_count: number;
           updated_at?: string;
           cached?: boolean;
+          max_leg_odds_percent?: number | null;
         }
       >(functions, 'get_kalshi_nfl_markets');
       const res = await kalshiFn({});
       if (res.data) {
         applyBoard(res.data);
+        if (res.data.max_leg_odds_percent !== undefined) {
+          setMaxLegOddsPercent(res.data.max_leg_odds_percent);
+        }
       }
     } catch {
       // Fallback to direct Kalshi fetch below
@@ -1285,6 +1290,7 @@ export const App: React.FC = () => {
           oddsFormat={oddsFormat}
           onToggleOddsFormat={handleToggleOddsFormat}
           currentLeg={currentRosterId !== null ? parlay.legs.find(l => l.roster_id === currentRosterId) : undefined}
+          maxLegOddsPercent={maxLegOddsPercent}
         />
 
         <PastSlipsArchive
