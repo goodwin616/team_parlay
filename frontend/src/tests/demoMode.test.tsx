@@ -45,8 +45,9 @@ vi.mock('../services/auth', async (importOriginal) => {
   };
 });
 
-import { App, submitPickToParlay } from '../App';
+import { App, submitPickToParlay, MOCK_PAST_PARLAYS } from '../App';
 import { saveCachedTeamId, getCachedTeamId, clearCachedTeamId } from '../services/auth';
+import { PastSlipsArchive } from '../components/PastSlipsArchive';
 
 describe('Demo Mode Authentication & Firestore Isolation (CR-032)', () => {
   const store: Record<string, string> = {};
@@ -401,6 +402,120 @@ describe('Demo Mode Authentication & Firestore Isolation (CR-032)', () => {
       // ParlayCard content must NOT be visible
       expect(html).not.toContain('Weekly Bettor Spotlight');
       expect(html).not.toContain('Estimated Payout');
+    });
+  });
+
+  describe('6. Demo Past Slips Archive Fake Settled Outcomes (CR-033)', () => {
+    it('provides realistic fake settled data across Week 3, Week 2, and Week 1', () => {
+      expect(MOCK_PAST_PARLAYS).toHaveLength(3);
+
+      const [week3, week2, week1] = MOCK_PAST_PARLAYS;
+
+      // Week 3 (Won Ticket)
+      expect(week3.week).toBe(3);
+      expect(week3.status).toBe('won');
+      expect(week3.outcome).toBe('won');
+      expect(week3.settlement_status).toBe('finalized');
+      expect(week3.settled_at).toBe('2026-09-22T04:00:00Z');
+      expect(week3.actual_payout).toBe(133.20);
+      expect(week3.legs).toHaveLength(5);
+      week3.legs.forEach((leg) => {
+        expect(leg.status).toBe('won');
+        expect(leg.outcome).toBe('won');
+        expect(leg.settled_at).toBe('2026-09-21T03:30:00Z');
+      });
+
+      // Week 2 (Heartbreaker Lost Ticket)
+      expect(week2.week).toBe(2);
+      expect(week2.status).toBe('lost');
+      expect(week2.outcome).toBe('lost');
+      expect(week2.settlement_status).toBe('finalized');
+      expect(week2.settled_at).toBe('2026-09-15T04:00:00Z');
+      expect(week2.actual_payout).toBeNull();
+      expect(week2.legs).toHaveLength(5);
+      const losingLegs = week2.legs.filter((l) => l.status === 'lost');
+      const winningLegs = week2.legs.filter((l) => l.status === 'won');
+      expect(losingLegs).toHaveLength(1);
+      expect(winningLegs).toHaveLength(4);
+      expect(losingLegs[0].description).toContain('Travis Kelce');
+      expect(losingLegs[0].outcome).toBe('lost');
+      expect(losingLegs[0].settled_at).toBe('2026-09-14T03:00:00Z');
+      winningLegs.forEach((leg) => {
+        expect(leg.outcome).toBe('won');
+        expect(leg.settled_at).toBe('2026-09-14T03:00:00Z');
+      });
+
+      // Week 1 (Combo Void / Push Ticket)
+      expect(week1.week).toBe(1);
+      expect(week1.season).toBe('2026');
+      expect(week1.status).toBe('won');
+      expect(week1.outcome).toBe('won');
+      expect(week1.settlement_status).toBe('finalized');
+      expect(week1.settled_at).toBe('2026-09-08T04:00:00Z');
+      expect(week1.bettor).toEqual({
+        roster_id: 3,
+        team_name: 'Motor City Kitties',
+        owner_name: 'Alice',
+        points_last_week: 74.2,
+      });
+      expect(week1.earliest_kickoff).toBe('2026-09-03T20:15:00Z');
+      expect(week1.estimated_payout).toBe(65.00);
+      expect(week1.actual_payout).toBe(42.50);
+      expect(week1.legs).toHaveLength(4);
+      const voidLegs = week1.legs.filter((l) => l.status === 'voided');
+      const w1WinningLegs = week1.legs.filter((l) => l.status === 'won');
+      expect(voidLegs).toHaveLength(1);
+      expect(w1WinningLegs).toHaveLength(3);
+      expect(voidLegs[0].outcome).toBe('void');
+      expect(voidLegs[0].description).toContain('Christian McCaffrey');
+      w1WinningLegs.forEach((leg) => {
+        expect(leg.outcome).toBe('won');
+      });
+    });
+
+    it('renders all settlement badges (🏆 WON, ❌ LOST, HIT, MISS, PUSH) when displaying MOCK_PAST_PARLAYS in PastSlipsArchive', () => {
+      // Clean HTML tags and comments
+      const rawHtml = renderToString(
+        <PastSlipsArchive
+          isOpen={true}
+          onClose={() => {}}
+          pastParlays={MOCK_PAST_PARLAYS}
+        />
+      );
+      const html = rawHtml.replace(/<!--.*?-->/g, '');
+
+      // Parlay-level outcome badges
+      expect(html).toContain('🏆 WON ($133.20)');
+      expect(html).toContain('❌ LOST');
+      expect(html).toContain('🏆 WON ($42.50)');
+
+      // Leg-level outcome badges
+      // Since Week 3 is expanded by default (pastParlays[0].week):
+      expect(html).toContain('HIT');
+      expect(html).toContain('Jalen Hurts (PHI) • 2+ Passing TDs (YES)');
+
+      // Render individual week archives to verify MISS and PUSH leg badges
+      const week2Html = renderToString(
+        <PastSlipsArchive
+          isOpen={true}
+          onClose={() => {}}
+          pastParlays={[MOCK_PAST_PARLAYS[1]]}
+        />
+      ).replace(/<!--.*?-->/g, '');
+      expect(week2Html).toContain('MISS');
+      expect(week2Html).toContain('Travis Kelce (KC) • Anytime TD (1+) (YES)');
+      expect(week2Html).toContain('HIT');
+
+      const week1Html = renderToString(
+        <PastSlipsArchive
+          isOpen={true}
+          onClose={() => {}}
+          pastParlays={[MOCK_PAST_PARLAYS[2]]}
+        />
+      ).replace(/<!--.*?-->/g, '');
+      expect(week1Html).toContain('PUSH');
+      expect(week1Html).toContain('Christian McCaffrey (SF) • Anytime TD (1+) (YES)');
+      expect(week1Html).toContain('HIT');
     });
   });
 });

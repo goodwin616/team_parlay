@@ -188,11 +188,14 @@ const INITIAL_PARLAY: WeeklyParlay = {
 };
 
 // Past Parlays for Archive
-const MOCK_PAST_PARLAYS: WeeklyParlay[] = [
+export const MOCK_PAST_PARLAYS: WeeklyParlay[] = [
   {
     week: 3,
     season: '2026',
-    status: 'locked',
+    status: 'won',
+    outcome: 'won',
+    settlement_status: 'finalized',
+    settled_at: '2026-09-22T04:00:00Z',
     contains_sgp: false,
     bettor: {
       roster_id: 4,
@@ -202,11 +205,11 @@ const MOCK_PAST_PARLAYS: WeeklyParlay[] = [
     },
     earliest_kickoff: '2026-09-17T20:15:00Z',
     legs: [
-      { id: 'p3_1', roster_id: 1, team_name: 'Philly Special', owner_name: 'Blake', nfl_team: 'PHI', description: 'Jalen Hurts (PHI) • 2+ Passing TDs (YES)', odds_american: '-117', odds_decimal: 1.8519, price_cents: 54, status: 'submitted' },
-      { id: 'p3_2', roster_id: 2, team_name: 'Gridiron Clowns', owner_name: 'Bob', nfl_team: 'KC', description: 'Patrick Mahomes (KC) • 250+ Pass Yards (YES)', odds_american: '-113', odds_decimal: 1.8868, price_cents: 53, status: 'submitted' },
-      { id: 'p3_3', roster_id: 3, team_name: 'Motor City Kitties', owner_name: 'Alice', nfl_team: 'DET', description: 'DET -3.5 Spread', odds_american: '-113', odds_decimal: 1.8868, price_cents: 53, status: 'submitted' },
-      { id: 'p3_4', roster_id: 4, team_name: 'Buffalo Stampede', owner_name: 'Charlie', nfl_team: 'BUF', description: 'Josh Allen (BUF) • Anytime TD (1+) (YES)', odds_american: '+122', odds_decimal: 2.2222, price_cents: 45, status: 'submitted' },
-      { id: 'p3_5', roster_id: 5, team_name: 'Lone Star Dynasty', owner_name: 'Dave', nfl_team: 'DAL', description: 'DAL Winner (Moneyline)', odds_american: '-122', odds_decimal: 1.8182, price_cents: 55, status: 'submitted' },
+      { id: 'p3_1', roster_id: 1, team_name: 'Philly Special', owner_name: 'Blake', nfl_team: 'PHI', description: 'Jalen Hurts (PHI) • 2+ Passing TDs (YES)', odds_american: '-117', odds_decimal: 1.8519, price_cents: 54, status: 'won', outcome: 'won', settled_at: '2026-09-21T03:30:00Z' },
+      { id: 'p3_2', roster_id: 2, team_name: 'Gridiron Clowns', owner_name: 'Bob', nfl_team: 'KC', description: 'Patrick Mahomes (KC) • 250+ Pass Yards (YES)', odds_american: '-113', odds_decimal: 1.8868, price_cents: 53, status: 'won', outcome: 'won', settled_at: '2026-09-21T03:30:00Z' },
+      { id: 'p3_3', roster_id: 3, team_name: 'Motor City Kitties', owner_name: 'Alice', nfl_team: 'DET', description: 'DET -3.5 Spread', odds_american: '-113', odds_decimal: 1.8868, price_cents: 53, status: 'won', outcome: 'won', settled_at: '2026-09-21T03:30:00Z' },
+      { id: 'p3_4', roster_id: 4, team_name: 'Buffalo Stampede', owner_name: 'Charlie', nfl_team: 'BUF', description: 'Josh Allen (BUF) • Anytime TD (1+) (YES)', odds_american: '+122', odds_decimal: 2.2222, price_cents: 45, status: 'won', outcome: 'won', settled_at: '2026-09-21T03:30:00Z' },
+      { id: 'p3_5', roster_id: 5, team_name: 'Lone Star Dynasty', owner_name: 'Dave', nfl_team: 'DAL', description: 'DAL Winner (Moneyline)', odds_american: '-122', odds_decimal: 1.8182, price_cents: 55, status: 'won', outcome: 'won', settled_at: '2026-09-21T03:30:00Z' },
     ],
     estimated_odds_american: '+2564',
     estimated_multiplier: 26.64,
@@ -218,7 +221,10 @@ const MOCK_PAST_PARLAYS: WeeklyParlay[] = [
   {
     week: 2,
     season: '2026',
-    status: 'locked',
+    status: 'lost',
+    outcome: 'lost',
+    settlement_status: 'finalized',
+    settled_at: '2026-09-15T04:00:00Z',
     contains_sgp: true,
     bettor: {
       roster_id: 1,
@@ -228,18 +234,47 @@ const MOCK_PAST_PARLAYS: WeeklyParlay[] = [
     },
     earliest_kickoff: '2026-09-10T20:15:00Z',
     legs: [
-      { id: 'p2_1', roster_id: 1, team_name: 'Philly Special', owner_name: 'Blake', nfl_team: 'BAL', game_id: 'KXNFL-26SEP10-BAL', description: 'Derrick Henry (BAL) • Anytime TD (1+) (YES)', odds_american: '-138', odds_decimal: 1.7241, price_cents: 58, status: 'submitted' },
-      { id: 'p2_2', roster_id: 2, team_name: 'Gridiron Clowns', owner_name: 'Bob', nfl_team: 'KC', description: 'Travis Kelce (KC) • Anytime TD (1+) (YES)', odds_american: '+108', odds_decimal: 2.0833, price_cents: 48, status: 'submitted' },
-      { id: 'p2_3', roster_id: 3, team_name: 'Motor City Kitties', owner_name: 'Alice', nfl_team: 'DET', description: 'Jahmyr Gibbs (DET) • 50+ Rush Yards (YES)', odds_american: '-117', odds_decimal: 1.8519, price_cents: 54, status: 'submitted' },
-      { id: 'p2_4', roster_id: 4, team_name: 'Buffalo Stampede', owner_name: 'Charlie', nfl_team: 'BAL', game_id: 'KXNFL-26SEP10-BAL', description: 'Lamar Jackson (BAL) • 50+ Rush Yards (YES)', odds_american: '-108', odds_decimal: 1.9231, price_cents: 52, status: 'submitted' },
-      { id: 'p2_5', roster_id: 5, team_name: 'Lone Star Dynasty', owner_name: 'Dave', nfl_team: 'DAL', description: 'CeeDee Lamb (DAL) • Anytime TD (1+) (YES)', odds_american: '+104', odds_decimal: 2.0408, price_cents: 49, status: 'submitted' },
+      { id: 'p2_1', roster_id: 1, team_name: 'Philly Special', owner_name: 'Blake', nfl_team: 'BAL', game_id: 'KXNFL-26SEP10-BAL', description: 'Derrick Henry (BAL) • Anytime TD (1+) (YES)', odds_american: '-138', odds_decimal: 1.7241, price_cents: 58, status: 'won', outcome: 'won', settled_at: '2026-09-14T03:00:00Z' },
+      { id: 'p2_2', roster_id: 2, team_name: 'Gridiron Clowns', owner_name: 'Bob', nfl_team: 'KC', description: 'Travis Kelce (KC) • Anytime TD (1+) (YES)', odds_american: '+108', odds_decimal: 2.0833, price_cents: 48, status: 'lost', outcome: 'lost', settled_at: '2026-09-14T03:00:00Z' },
+      { id: 'p2_3', roster_id: 3, team_name: 'Motor City Kitties', owner_name: 'Alice', nfl_team: 'DET', description: 'Jahmyr Gibbs (DET) • 50+ Rush Yards (YES)', odds_american: '-117', odds_decimal: 1.8519, price_cents: 54, status: 'won', outcome: 'won', settled_at: '2026-09-14T03:00:00Z' },
+      { id: 'p2_4', roster_id: 4, team_name: 'Buffalo Stampede', owner_name: 'Charlie', nfl_team: 'BAL', game_id: 'KXNFL-26SEP10-BAL', description: 'Lamar Jackson (BAL) • 50+ Rush Yards (YES)', odds_american: '-108', odds_decimal: 1.9231, price_cents: 52, status: 'won', outcome: 'won', settled_at: '2026-09-14T03:00:00Z' },
+      { id: 'p2_5', roster_id: 5, team_name: 'Lone Star Dynasty', owner_name: 'Dave', nfl_team: 'DAL', description: 'CeeDee Lamb (DAL) • Anytime TD (1+) (YES)', odds_american: '+104', odds_decimal: 2.0408, price_cents: 49, status: 'won', outcome: 'won', settled_at: '2026-09-14T03:00:00Z' },
     ],
     estimated_odds_american: '+2510',
     estimated_multiplier: 26.10,
     estimated_payout: 130.50,
     combined_probability_cents: 4,
-    actual_payout: 112.00,
-    actual_odds_american: '+2140',
+    actual_payout: null,
+    actual_odds_american: '+2510',
+  },
+  {
+    week: 1,
+    season: '2026',
+    status: 'won',
+    outcome: 'won',
+    settlement_status: 'finalized',
+    settled_at: '2026-09-08T04:00:00Z',
+    contains_sgp: false,
+    bettor: {
+      roster_id: 3,
+      team_name: 'Motor City Kitties',
+      owner_name: 'Alice',
+      points_last_week: 74.2,
+    },
+    earliest_kickoff: '2026-09-03T20:15:00Z',
+    legs: [
+      { id: 'p1_1', roster_id: 1, team_name: 'Philly Special', owner_name: 'Blake', nfl_team: 'PHI', description: 'A.J. Brown (PHI) • 50+ Receiving Yards (YES)', odds_american: '-125', odds_decimal: 1.8, price_cents: 55, status: 'won', outcome: 'won', settled_at: '2026-09-07T03:00:00Z' },
+      { id: 'p1_2', roster_id: 2, team_name: 'Gridiron Clowns', owner_name: 'Bob', nfl_team: 'KC', description: 'Patrick Mahomes (KC) • 200+ Pass Yards (YES)', odds_american: '-150', odds_decimal: 1.6667, price_cents: 60, status: 'won', outcome: 'won', settled_at: '2026-09-06T03:00:00Z' },
+      { id: 'p1_3', roster_id: 4, team_name: 'Buffalo Stampede', owner_name: 'Charlie', nfl_team: 'SF', description: 'Christian McCaffrey (SF) • Anytime TD (1+) (YES)', odds_american: '-135', odds_decimal: 1.7407, price_cents: 57, status: 'voided', outcome: 'void', settled_at: '2026-09-07T23:00:00Z' },
+      { id: 'p1_4', roster_id: 5, team_name: 'Lone Star Dynasty', owner_name: 'Dave', nfl_team: 'DET', description: 'Sam LaPorta (DET) • 40+ Receiving Yards (YES)', odds_american: '-110', odds_decimal: 1.9091, price_cents: 52, status: 'won', outcome: 'won', settled_at: '2026-09-07T03:00:00Z' },
+    ],
+    estimated_odds_american: '+1200',
+    estimated_multiplier: 13.0,
+    estimated_payout: 65.00,
+    actual_multiplier: 8.5,
+    actual_payout: 42.50,
+    actual_odds_american: '+750',
+    combined_probability_cents: 8,
   },
 ];
 
