@@ -37,6 +37,8 @@ export interface ParlayLeg {
   kalshi_market_ticker?: string;          // e.g. "KXNFLRUSHYDS-26NOV01-SBARKLEY-75"
   kalshi_side?: 'yes' | 'no';
   status: 'pending' | 'submitted' | 'won' | 'lost' | 'voided' | 'pushed';
+  outcome?: 'won' | 'lost' | 'void' | 'pending';
+  settled_at?: string;
   kickoff_time?: string;                  // ISO 8601 string
   last_edited_by?: {
     uid: string;
@@ -51,6 +53,9 @@ export interface WeeklyParlay {
   week: number;
   season: string;
   status: 'open' | 'locked' | 'won' | 'lost' | 'voided' | 'pushed';
+  outcome?: 'won' | 'lost' | 'pending';
+  settlement_status?: 'finalized' | 'pending';
+  settled_at?: string;
   contains_sgp: boolean;                  // True if multiple submitted legs share the same game_id
   isRealDataLoaded?: boolean;             // True if loaded from live Sleeper API or Firestore sync
   bettor: {

@@ -46,6 +46,10 @@ from sleeper_sync import (
     build_teams_from_sleeper,
     determine_weekly_bettor,
 )
+import logging
+from settlement_engine import settle_unfinalized_parlays
+
+logger = logging.getLogger(__name__)
 
 KALSHI_SECRETS = ["KALSHI_API_KEY_ID", "KALSHI_PRIVATE_KEY_PEM"]
 KALSHI_API_BASE_URL = os.environ.get("KALSHI_API_BASE_URL", "https://api.elections.kalshi.com/trade-api/v2")
@@ -205,6 +209,10 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 and existing_week == current_week
                 and parlay_doc_exists
             ):
+                try:
+                    settle_unfinalized_parlays(db, league_id, season, current_week)
+                except Exception as s_exc:
+                    logger.warning("settle_unfinalized_parlays error during short-circuit sync: %s", s_exc)
                 return {"success": True, "league": existing_meta, "season": season, "source": "sleeper"}
 
             teams = build_teams_from_sleeper(sleeper_data["rosters"], sleeper_data["users"])
@@ -302,6 +310,12 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
             except Exception:
                 pass
 
+            # Automatically grade and settle locked/unfinalized parlays via Kalshi
+            try:
+                settle_unfinalized_parlays(db, league_id, season, current_week)
+            except Exception as s_exc:
+                logger.warning("settle_unfinalized_parlays error during league sync: %s", s_exc)
+
             return {"success": True, "league": league_meta, "season": season, "source": "sleeper"}
         except Exception as exc:
             raise https_fn.HttpsError(
@@ -360,6 +374,11 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
     for p in fallback_parlays:
         week = str(p.get("week"))
         season_ref.collection("parlays").document(week).set({**p, "season": season})
+
+    try:
+        settle_unfinalized_parlays(db, league_id, season, 4)
+    except Exception as s_exc:
+        logger.warning("settle_unfinalized_parlays error during demo sync: %s", s_exc)
 
     return {"success": True, "league": league_meta, "season": season, "source": "demo"}
 
