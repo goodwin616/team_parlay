@@ -1,5 +1,6 @@
 # 🏈 Team Parlay
 
+[![Live App](https://img.shields.io/badge/Live_App-parlay.goodwin.io-00C853?logo=googlechrome&logoColor=white)](https://parlay.goodwin.io)
 [![React 18](https://img.shields.io/badge/React-18.3.1-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-5.4.2-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.4-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -9,6 +10,8 @@
 [![Vitest](https://img.shields.io/badge/Vitest-160_passed-729B1B?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Pytest](https://img.shields.io/badge/Pytest-86_passed-0A9EDC?logo=pytest&logoColor=white)](https://pytest.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
+> **Live Application**: [https://parlay.goodwin.io](https://parlay.goodwin.io)
 
 A collaborative fullstack fantasy football application where the lowest-scoring fantasy manager each week funds a \$5 community parlay ticket on Kalshi, built leg-by-leg by the entire league.
 
@@ -274,6 +277,8 @@ npm run build
 cd ..
 firebase deploy --only hosting
 ```
+
+The production web app is accessible at **[parlay.goodwin.io](https://parlay.goodwin.io)**.
 
 ---
 
