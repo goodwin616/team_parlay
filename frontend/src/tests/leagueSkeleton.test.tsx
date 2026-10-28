@@ -25,7 +25,7 @@ function cleanText(html: string): string {
   return html.replace(/<!--.*?-->/g, '');
 }
 
-describe('CR-009: Loading Skeletons & Flash Mitigation', () => {
+describe('LeagueSkeleton & Loading Experience', () => {
   const store: Record<string, string> = {};
 
   beforeEach(() => {

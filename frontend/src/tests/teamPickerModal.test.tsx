@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server';
 import { TeamPickerModal } from '../components/TeamPickerModal';
 import { TeamProfile } from '../types';
 
-describe('CR-015: TeamPickerModal Chip, Badge, and Alignment Refinements', () => {
+describe('TeamPickerModal', () => {
   const mockTeams: TeamProfile[] = [
     {
       roster_id: 1,
