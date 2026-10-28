@@ -494,7 +494,7 @@ export const PickModal: React.FC<Props> = ({
   isOpen,
   onClose,
   onSubmitPick,
-  rosterName,
+  rosterName: _rosterName,
   activePlayers,
   kalshiGames = [],
   kalshiProps = [],
@@ -1025,11 +1025,6 @@ export const PickModal: React.FC<Props> = ({
         previewTicker = selectedGame.total_under.market_ticker;
         previewLine = `${selectedGame.away_team} @ ${selectedGame.home_team} UNDER ${selectedGame.total_under.point}`;
       }
-
-      if (isExceedingMax(previewCents)) {
-        previewLine = "Select an available game line above";
-        previewTeam = "";
-      }
     } else {
       previewLine = "Select an available game line above";
       previewTeam = "";
@@ -1039,7 +1034,6 @@ export const PickModal: React.FC<Props> = ({
   const canSubmit =
     tab === "mainline"
       ? Boolean(selectedGame) &&
-        !isExceedingMax(previewCents) &&
         previewLine !== "Select an available game line above"
       : Boolean(selectedPlayer && activeContract) &&
         !isExceedingMax(previewCents) &&
@@ -1560,97 +1554,85 @@ export const PickModal: React.FC<Props> = ({
 
                             <div className="grid grid-cols-3 gap-1.5 w-[62%] sm:w-[64%] shrink-0">
                               {/* Spread Away */}
-                              {isExceedingMax(g.spread_away.price_cents) ? (
-                                <div className="min-h-[46px] rounded-lg border border-transparent bg-transparent" />
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => selectLine("spread_away")}
-                                  className={`py-2 px-1.5 rounded-lg border text-center transition ${
+                              <button
+                                type="button"
+                                onClick={() => selectLine("spread_away")}
+                                className={`py-2 px-1.5 rounded-lg border text-center transition ${
+                                  isPicked("spread_away")
+                                    ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
+                                    : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                }`}
+                              >
+                                <div className="text-xs font-extrabold leading-tight">
+                                  {awaySpreadPt}
+                                </div>
+                                <div
+                                  className={`text-[10px] sm:text-[11px] font-mono mt-0.5 ${
                                     isPicked("spread_away")
-                                      ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
-                                      : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                      ? "text-black/80 font-bold"
+                                      : "text-sleeper-accent font-semibold"
                                   }`}
                                 >
-                                  <div className="text-xs font-extrabold leading-tight">
-                                    {awaySpreadPt}
-                                  </div>
-                                  <div
-                                    className={`text-[10px] sm:text-[11px] font-mono mt-0.5 ${
-                                      isPicked("spread_away")
-                                        ? "text-black/80 font-bold"
-                                        : "text-sleeper-accent font-semibold"
-                                    }`}
-                                  >
-                                    {formatOddsWithCents(
-                                      g.spread_away.odds,
-                                      g.spread_away.price_cents,
-                                      oddsFormat,
-                                    )}
-                                  </div>
-                                </button>
-                              )}
+                                  {formatOddsWithCents(
+                                    g.spread_away.odds,
+                                    g.spread_away.price_cents,
+                                    oddsFormat,
+                                  )}
+                                </div>
+                              </button>
 
                               {/* Total Over */}
-                              {isExceedingMax(g.total_over.price_cents) ? (
-                                <div className="min-h-[46px] rounded-lg border border-transparent bg-transparent" />
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => selectLine("total_over")}
-                                  className={`py-2 px-1.5 rounded-lg border text-center transition ${
+                              <button
+                                type="button"
+                                onClick={() => selectLine("total_over")}
+                                className={`py-2 px-1.5 rounded-lg border text-center transition ${
+                                  isPicked("total_over")
+                                    ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
+                                    : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                }`}
+                              >
+                                <div className="text-xs font-extrabold leading-tight">
+                                  O {g.total_over.point}
+                                </div>
+                                <div
+                                  className={`text-[10px] sm:text-[11px] font-mono mt-0.5 ${
                                     isPicked("total_over")
-                                      ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
-                                      : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                      ? "text-black/80 font-bold"
+                                      : "text-sleeper-accent font-semibold"
                                   }`}
                                 >
-                                  <div className="text-xs font-extrabold leading-tight">
-                                    O {g.total_over.point}
-                                  </div>
-                                  <div
-                                    className={`text-[10px] sm:text-[11px] font-mono mt-0.5 ${
-                                      isPicked("total_over")
-                                        ? "text-black/80 font-bold"
-                                        : "text-sleeper-accent font-semibold"
-                                    }`}
-                                  >
-                                    {formatOddsWithCents(
-                                      g.total_over.odds,
-                                      g.total_over.price_cents,
-                                      oddsFormat,
-                                    )}
-                                  </div>
-                                </button>
-                              )}
+                                  {formatOddsWithCents(
+                                    g.total_over.odds,
+                                    g.total_over.price_cents,
+                                    oddsFormat,
+                                  )}
+                                </div>
+                              </button>
 
                               {/* Moneyline Away */}
-                              {isExceedingMax(g.ml_away.price_cents) ? (
-                                <div className="min-h-[46px] rounded-lg border border-transparent bg-transparent" />
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => selectLine("ml_away")}
-                                  className={`py-2 px-1.5 rounded-lg border text-center transition flex flex-col items-center justify-center ${
+                              <button
+                                type="button"
+                                onClick={() => selectLine("ml_away")}
+                                className={`py-2 px-1.5 rounded-lg border text-center transition flex flex-col items-center justify-center ${
+                                  isPicked("ml_away")
+                                    ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
+                                    : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                }`}
+                              >
+                                <div
+                                  className={`text-xs font-mono font-extrabold leading-tight ${
                                     isPicked("ml_away")
-                                      ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
-                                      : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                      ? "text-black"
+                                      : "text-sleeper-accent"
                                   }`}
                                 >
-                                  <div
-                                    className={`text-xs font-mono font-extrabold leading-tight ${
-                                      isPicked("ml_away")
-                                        ? "text-black"
-                                        : "text-sleeper-accent"
-                                    }`}
-                                  >
-                                    {formatOddsWithCents(
-                                      g.ml_away.odds,
-                                      g.ml_away.price_cents,
-                                      oddsFormat,
-                                    )}
-                                  </div>
-                                </button>
-                              )}
+                                  {formatOddsWithCents(
+                                    g.ml_away.odds,
+                                    g.ml_away.price_cents,
+                                    oddsFormat,
+                                  )}
+                                </div>
+                              </button>
                             </div>
                           </div>
 
@@ -1679,97 +1661,85 @@ export const PickModal: React.FC<Props> = ({
 
                             <div className="grid grid-cols-3 gap-1.5 w-[62%] sm:w-[64%] shrink-0">
                               {/* Spread Home */}
-                              {isExceedingMax(g.spread_home.price_cents) ? (
-                                <div className="min-h-[46px] rounded-lg border border-transparent bg-transparent" />
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => selectLine("spread_home")}
-                                  className={`py-2 px-1.5 rounded-lg border text-center transition ${
+                              <button
+                                type="button"
+                                onClick={() => selectLine("spread_home")}
+                                className={`py-2 px-1.5 rounded-lg border text-center transition ${
+                                  isPicked("spread_home")
+                                    ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
+                                    : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                }`}
+                              >
+                                <div className="text-xs font-extrabold leading-tight">
+                                  {homeSpreadPt}
+                                </div>
+                                <div
+                                  className={`text-[10px] sm:text-[11px] font-mono mt-0.5 ${
                                     isPicked("spread_home")
-                                      ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
-                                      : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                      ? "text-black/80 font-bold"
+                                      : "text-sleeper-accent font-semibold"
                                   }`}
                                 >
-                                  <div className="text-xs font-extrabold leading-tight">
-                                    {homeSpreadPt}
-                                  </div>
-                                  <div
-                                    className={`text-[10px] sm:text-[11px] font-mono mt-0.5 ${
-                                      isPicked("spread_home")
-                                        ? "text-black/80 font-bold"
-                                        : "text-sleeper-accent font-semibold"
-                                    }`}
-                                  >
-                                    {formatOddsWithCents(
-                                      g.spread_home.odds,
-                                      g.spread_home.price_cents,
-                                      oddsFormat,
-                                    )}
-                                  </div>
-                                </button>
-                              )}
+                                  {formatOddsWithCents(
+                                    g.spread_home.odds,
+                                    g.spread_home.price_cents,
+                                    oddsFormat,
+                                  )}
+                                </div>
+                              </button>
 
                               {/* Total Under */}
-                              {isExceedingMax(g.total_under.price_cents) ? (
-                                <div className="min-h-[46px] rounded-lg border border-transparent bg-transparent" />
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => selectLine("total_under")}
-                                  className={`py-2 px-1.5 rounded-lg border text-center transition ${
+                              <button
+                                type="button"
+                                onClick={() => selectLine("total_under")}
+                                className={`py-2 px-1.5 rounded-lg border text-center transition ${
+                                  isPicked("total_under")
+                                    ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
+                                    : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                }`}
+                              >
+                                <div className="text-xs font-extrabold leading-tight">
+                                  U {g.total_under.point}
+                                </div>
+                                <div
+                                  className={`text-[10px] sm:text-[11px] font-mono mt-0.5 ${
                                     isPicked("total_under")
-                                      ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
-                                      : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                      ? "text-black/80 font-bold"
+                                      : "text-sleeper-accent font-semibold"
                                   }`}
                                 >
-                                  <div className="text-xs font-extrabold leading-tight">
-                                    U {g.total_under.point}
-                                  </div>
-                                  <div
-                                    className={`text-[10px] sm:text-[11px] font-mono mt-0.5 ${
-                                      isPicked("total_under")
-                                        ? "text-black/80 font-bold"
-                                        : "text-sleeper-accent font-semibold"
-                                    }`}
-                                  >
-                                    {formatOddsWithCents(
-                                      g.total_under.odds,
-                                      g.total_under.price_cents,
-                                      oddsFormat,
-                                    )}
-                                  </div>
-                                </button>
-                              )}
+                                  {formatOddsWithCents(
+                                    g.total_under.odds,
+                                    g.total_under.price_cents,
+                                    oddsFormat,
+                                  )}
+                                </div>
+                              </button>
 
                               {/* Moneyline Home */}
-                              {isExceedingMax(g.ml_home.price_cents) ? (
-                                <div className="min-h-[46px] rounded-lg border border-transparent bg-transparent" />
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => selectLine("ml_home")}
-                                  className={`py-2 px-1.5 rounded-lg border text-center transition flex flex-col items-center justify-center ${
+                              <button
+                                type="button"
+                                onClick={() => selectLine("ml_home")}
+                                className={`py-2 px-1.5 rounded-lg border text-center transition flex flex-col items-center justify-center ${
+                                  isPicked("ml_home")
+                                    ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
+                                    : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                }`}
+                              >
+                                <div
+                                  className={`text-xs font-mono font-extrabold leading-tight ${
                                     isPicked("ml_home")
-                                      ? "bg-sleeper-accent text-black border-sleeper-accent font-extrabold shadow-md"
-                                      : "bg-sleeper-card text-gray-200 border-sleeper-border hover:border-sleeper-accent/50 hover:bg-white/[0.04]"
+                                      ? "text-black"
+                                      : "text-sleeper-accent"
                                   }`}
                                 >
-                                  <div
-                                    className={`text-xs font-mono font-extrabold leading-tight ${
-                                      isPicked("ml_home")
-                                        ? "text-black"
-                                        : "text-sleeper-accent"
-                                    }`}
-                                  >
-                                    {formatOddsWithCents(
-                                      g.ml_home.odds,
-                                      g.ml_home.price_cents,
-                                      oddsFormat,
-                                    )}
-                                  </div>
-                                </button>
-                              )}
+                                  {formatOddsWithCents(
+                                    g.ml_home.odds,
+                                    g.ml_home.price_cents,
+                                    oddsFormat,
+                                  )}
+                                </div>
+                              </button>
                             </div>
                           </div>
                         </div>

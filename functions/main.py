@@ -566,7 +566,14 @@ def submit_leg(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
     max_odds = get_max_leg_odds_percent()
     leg_price = leg.get("price_cents")
-    if max_odds is not None:
+    ticker = str(leg.get("kalshi_market_ticker") or "")
+    desc = str(leg.get("description") or "")
+    is_game_prop = (
+        ticker.startswith(("KXNFLGAME", "KXNFLSPREAD", "KXNFLTOTAL"))
+        or ("•" not in desc and any(k in desc for k in ["Spread", "Moneyline", "OVER ", "UNDER "]))
+    )
+
+    if max_odds is not None and not is_game_prop:
         if leg_price is None:
             raise https_fn.HttpsError(
                 code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT,

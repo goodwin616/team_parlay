@@ -83,9 +83,9 @@ def test_submit_leg_rejects_pick_exceeding_max_odds():
         "week": 4,
         "leg": {
             "roster_id": 1,
-            "kalshi_market_ticker": "KXNFLGAME-TEST",
+            "kalshi_market_ticker": "KXNFLTD-TEST",
             "price_cents": 62,
-            "description": "Heavy Favorite",
+            "description": "Patrick Mahomes • Pass Yards OVER 260.5 (YES)",
             "kickoff_time": "2099-01-01T00:00:00Z",
         },
     }
@@ -121,6 +121,73 @@ def test_submit_leg_rejects_pick_exceeding_max_odds():
 
         assert exc_info.value.code == https_fn.FunctionsErrorCode.FAILED_PRECONDITION
         assert "exceed the maximum allowed limit of 55%" in exc_info.value.message
+
+
+@pytest.mark.parametrize("ticker,desc", [
+    ("KXNFLGAME-TEST", "KC Winner (Moneyline)"),
+    ("KXNFLSPREAD-TEST", "KC -3.5 Spread"),
+    ("KXNFLTOTAL-TEST", "KC @ BAL OVER 47"),
+    ("KXNFLTOTAL-TEST", "KC @ BAL UNDER 47"),
+    ("", "KC -3.5 Spread"),
+    ("", "KC Winner (Moneyline)"),
+    ("", "KC @ BAL OVER 47"),
+    ("", "KC @ BAL UNDER 47"),
+])
+def test_submit_leg_allows_game_props_exceeding_max_odds(ticker, desc):
+    req = MagicMock(spec=https_fn.CallableRequest)
+    req.auth = MagicMock(uid="u1", token={"name": "Owner 1"})
+    req.data = {
+        "league_id": "12345",
+        "roster_id": 1,
+        "week": 4,
+        "leg": {
+            "roster_id": 1,
+            "kalshi_market_ticker": ticker,
+            "price_cents": 85,
+            "description": desc,
+            "kickoff_time": "2099-01-01T00:00:00Z",
+        },
+    }
+
+    mock_db = MagicMock()
+    mock_team_doc = MagicMock()
+    mock_team_doc.exists = True
+    mock_team_doc.to_dict.return_value = {
+        "roster_id": 1,
+        "claimed_by": {"uid": "u1"},
+    }
+
+    mock_parlay_doc = MagicMock()
+    mock_parlay_doc.exists = True
+    mock_parlay_doc.to_dict.return_value = {
+        "status": "open",
+        "legs": [],
+    }
+
+    mock_db.collection().document().collection().document().get.side_effect = [
+        mock_team_doc,
+        mock_parlay_doc,
+    ]
+
+    with patch("main.require_actor", return_value={"uid": "u1", "name": "Owner 1"}), \
+         patch("main.get_db", return_value=mock_db), \
+         patch("main.get_market_kickoff_time", return_value="2099-01-01T00:00:00Z"), \
+         patch("main.is_kickoff_passed", return_value=False), \
+         patch("main.get_kalshi_client") as mock_kc, \
+         patch.dict(os.environ, {"MAX_LEG_ODDS_PERCENT": "55"}):
+
+        client_instance = MagicMock()
+        client_instance.fetch_combo_quote.return_value = {
+            "odds_american": "-567",
+            "multiplier": 1.18,
+            "estimated_payout": 5.9,
+            "pricing_source": "parlay_math",
+            "contains_sgp": False,
+        }
+        mock_kc.return_value = client_instance
+
+        res = submit_leg(req)
+        assert res.get("success") is True
 
 
 def test_submit_leg_allows_pick_within_max_odds():
@@ -189,8 +256,8 @@ def test_submit_leg_rejects_missing_or_non_numeric_price_cents():
         req.auth = MagicMock(uid="u1", token={"name": "Owner 1"})
         leg_data = {
             "roster_id": 1,
-            "kalshi_market_ticker": "KXNFLGAME-TEST",
-            "description": "Bad Price Pick",
+            "kalshi_market_ticker": "KXNFLTD-TEST",
+            "description": "Patrick Mahomes • Pass Yards OVER 260.5 (YES)",
             "kickoff_time": "2099-01-01T00:00:00Z",
         }
         if bad_price is not None:
@@ -233,9 +300,9 @@ def test_submit_leg_rejects_missing_or_non_numeric_price_cents():
         "week": 4,
         "leg": {
             "roster_id": 1,
-            "kalshi_market_ticker": "KXNFLGAME-TEST",
+            "kalshi_market_ticker": "KXNFLTD-TEST",
             "price_cents": None,
-            "description": "None Price Pick",
+            "description": "Patrick Mahomes • Pass Yards OVER 260.5 (YES)",
             "kickoff_time": "2099-01-01T00:00:00Z",
         },
     }
@@ -319,9 +386,9 @@ def test_submit_leg_rejects_pick_with_fractional_max_odds_formatting():
         "week": 4,
         "leg": {
             "roster_id": 1,
-            "kalshi_market_ticker": "KXNFLGAME-TEST",
+            "kalshi_market_ticker": "KXNFLTD-TEST",
             "price_cents": 56,
-            "description": "Over Fraction Limit",
+            "description": "Patrick Mahomes • Pass Yards OVER 260.5 (YES)",
             "kickoff_time": "2099-01-01T00:00:00Z",
         },
     }

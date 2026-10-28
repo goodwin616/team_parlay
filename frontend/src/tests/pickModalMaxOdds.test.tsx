@@ -77,7 +77,7 @@ describe('PickModal Max Leg Odds Filtering', () => {
     },
   ];
 
-  it('hides game line options whose price_cents exceed maxLegOddsPercent', () => {
+  it('never hides game line options whose price_cents exceed maxLegOddsPercent', () => {
     render(
       <PickModal
         isOpen={true}
@@ -92,8 +92,8 @@ describe('PickModal Max Leg Odds Filtering', () => {
 
     // Away ML (46c) should be visible
     expect(screen.getByText('+117')).toBeInTheDocument();
-    // Home ML (58c) should be hidden
-    expect(screen.queryByText('-138')).not.toBeInTheDocument();
+    // Home ML (58c) should also be visible (game lines are exempt from maxLegOddsPercent)
+    expect(screen.getByText('-138')).toBeInTheDocument();
   });
 
   it('filters out player props whose yes_cents exceed maxLegOddsPercent', () => {
@@ -160,7 +160,7 @@ describe('PickModal Max Leg Odds Filtering', () => {
     expect(screen.getByText('-138')).toBeInTheDocument();
   });
 
-  it('hides spread and total options when their price_cents exceed maxLegOddsPercent', () => {
+  it('shows spread and total options even when their price_cents exceed maxLegOddsPercent', () => {
     const tightGame: GameLineOption = {
       game_id: 'GAME_TIGHT',
       home_team: 'BAL',
@@ -186,13 +186,11 @@ describe('PickModal Max Leg Odds Filtering', () => {
       />
     );
 
-    // Under 50 options should be visible
+    // Both under and over 50 options should be visible for game lines
     expect(screen.getByText('+2.5')).toBeInTheDocument();
+    expect(screen.getByText('-2.5')).toBeInTheDocument();
+    expect(screen.getByText('O 47.5')).toBeInTheDocument();
     expect(screen.getByText('U 47.5')).toBeInTheDocument();
-
-    // Over 50 options should be hidden
-    expect(screen.queryByText('-2.5')).not.toBeInTheDocument();
-    expect(screen.queryByText('O 47.5')).not.toBeInTheDocument();
   });
 
   it('filters synthetic player props when kalshiProps is empty', () => {
@@ -253,9 +251,9 @@ describe('PickModal Max Leg Odds Filtering', () => {
     expect(html).toContain('Submit My Weekly Leg');
   });
 
-  it('blocks submission and shows placeholder preview when default game line exceeds maxLegOddsPercent', () => {
+  it('allows submission and displays preview when default game line exceeds maxLegOddsPercent', () => {
     // In sampleGame: spread_away is KC +2.5 with price_cents: 52
-    // With maxLegOddsPercent: 50, the default spread_away exceeds 50%
+    // Even with maxLegOddsPercent: 50, game lines are exempt from max odds limit
     const { html } = render(
       <PickModal
         isOpen={true}
@@ -269,12 +267,12 @@ describe('PickModal Max Leg Odds Filtering', () => {
       />
     );
 
-    // Preview should prompt user to select an available line rather than pre-populating KC +2.5 Spread
-    expect(screen.getByText('Select an available game line above')).toBeInTheDocument();
-    expect(screen.queryByText('KC +2.5 Spread')).not.toBeInTheDocument();
+    // Preview should pre-populate KC +2.5 Spread normally
+    expect(screen.getByText('KC +2.5 Spread')).toBeInTheDocument();
 
-    // Submit button MUST be disabled
-    expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled/i);
+    // Submit button MUST NOT be disabled
+    expect(html).not.toMatch(/<button[^>]*type="submit"[^>]*disabled/i);
+    expect(html).toContain('Submit My Weekly Leg');
   });
 
   it('disables player prop NO button when no_cents exceeds maxLegOddsPercent', () => {
