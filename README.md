@@ -7,7 +7,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4.10-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Python 3.14](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Firebase](https://img.shields.io/badge/Firebase-v2_Functions_%26_Firestore-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
-[![Vitest](https://img.shields.io/badge/Vitest-178_passed-729B1B?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-180_passed-729B1B?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Pytest](https://img.shields.io/badge/Pytest-86_passed-0A9EDC?logo=pytest&logoColor=white)](https://pytest.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Privacy Policy](https://img.shields.io/badge/Privacy-Policy-emerald.svg)](PRIVACY.md)
@@ -231,7 +231,7 @@ Copy `frontend/.env.example` to `frontend/.env`:
 ## Testing
 
 ### Frontend Suite (Vitest)
-Executes 178 unit and component tests covering claim flows, countdown timers, odds conversions, and pick modals:
+Executes 180 unit and component tests covering claim flows, countdown timers, odds conversions, and pick modals:
 
 ```bash
 cd frontend
