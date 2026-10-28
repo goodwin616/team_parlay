@@ -98,8 +98,8 @@ We utilize reputable, privacy-conscious third-party infrastructure providers to 
 | Provider | Purpose | Data Processed | Privacy Documentation |
 | :--- | :--- | :--- | :--- |
 | **Google Cloud Platform / Firebase** | Web hosting (Firebase Hosting), identity authentication, real-time database (Cloud Firestore), serverless compute (Cloud Functions). | Auth profiles, Firestore documents, audit logs, IP addresses. | [Google Cloud Privacy](https://cloud.google.com/terms/cloud-privacy-notice) / [Firebase Privacy](https://firebase.google.com/support/privacy) |
-| **Sleeper (Sleeper.app)** | Retrieval of public fantasy football league rosters, matchup scores, and weekly loser/bettor designation via public API. | Public League ID, roster IDs, fantasy team names. | [Sleeper Privacy Policy](https://support.sleeper.com/en/articles/3981882-privacy-policy) |
-| **Kalshi Trade API** | Retrieval of real-time prediction market prices, game lines, player props, and official settlement outcomes. | Market contract tickers; no manager PII is sent to Kalshi. | [Kalshi Privacy Policy](https://kalshi.com/regulatory/privacy-policy) |
+| **Sleeper (Sleeper.app)** | Retrieval of public fantasy football league rosters, matchup scores, and weekly loser/bettor designation via public API. | Public League ID, roster IDs, fantasy team names. | [Sleeper Privacy Notice](https://support.sleeper.com/en/articles/5486618-privacy-notice) |
+| **Kalshi Trade API** | Retrieval of real-time prediction market prices, game lines, player props, and official settlement outcomes. | Market contract tickers; no manager PII is sent to Kalshi. | [Kalshi Privacy Policy](https://kalshi.com/privacy-policy) |
 
 ---
 
