@@ -80,6 +80,7 @@ export const ParlayCard: React.FC<Props> = ({
 
   const submittedCount = parlay.legs.filter(l => l.status === 'submitted').length;
   const isOfficialQuote = Boolean(parlay.actual_payout || parlay.actual_odds_american);
+  const hasSubmittedLegs = submittedCount > 0 || isOfficialQuote;
   const totalPayout = parlay.actual_payout ?? parlay.estimated_payout;
   const payoutPerPlayer = submittedCount > 0 ? totalPayout / submittedCount : 0;
 
@@ -211,13 +212,21 @@ export const ParlayCard: React.FC<Props> = ({
             <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
               {isOfficialQuote ? 'Combo Odds' : 'Est. Combo Odds'}
             </span>
-            <span className="text-sm sm:text-base font-black font-mono text-white">
-              {formatComboOdds(
-                parlay.actual_odds_american || parlay.estimated_odds_american,
-                parlay.estimated_multiplier,
-                parlay.combined_probability_cents,
-                oddsFormat
-              )}
+            <span
+              className={`text-sm sm:text-base ${
+                hasSubmittedLegs
+                  ? 'font-black font-mono text-white'
+                  : 'text-gray-500 font-mono font-bold'
+              }`}
+            >
+              {hasSubmittedLegs
+                ? formatComboOdds(
+                    parlay.actual_odds_american || parlay.estimated_odds_american,
+                    parlay.estimated_multiplier,
+                    parlay.combined_probability_cents,
+                    oddsFormat
+                  )
+                : '—'}
             </span>
           </div>
 
@@ -225,8 +234,14 @@ export const ParlayCard: React.FC<Props> = ({
             <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
               {isOfficialQuote ? 'Multiplier' : 'Est. Multiplier'}
             </span>
-            <span className="text-sm sm:text-base font-extrabold font-mono text-white">
-              {parlay.estimated_multiplier.toFixed(2)}x
+            <span
+              className={`text-sm sm:text-base ${
+                hasSubmittedLegs
+                  ? 'font-extrabold font-mono text-white'
+                  : 'text-gray-500 font-mono font-bold'
+              }`}
+            >
+              {hasSubmittedLegs ? `${parlay.estimated_multiplier.toFixed(2)}x` : '—'}
             </span>
           </div>
 
@@ -234,8 +249,14 @@ export const ParlayCard: React.FC<Props> = ({
             <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
               {isOfficialQuote ? 'Total Payout' : 'Est. Total Payout'}
             </span>
-            <span className="text-sm sm:text-base font-black font-mono text-sleeper-accent">
-              ${totalPayout.toFixed(2)}
+            <span
+              className={`text-sm sm:text-base ${
+                hasSubmittedLegs
+                  ? 'font-black font-mono text-sleeper-accent'
+                  : 'text-gray-500 font-mono font-bold'
+              }`}
+            >
+              {hasSubmittedLegs ? `$${totalPayout.toFixed(2)}` : '—'}
             </span>
           </div>
 
@@ -243,13 +264,19 @@ export const ParlayCard: React.FC<Props> = ({
             <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block leading-none mb-1.5">
               {isOfficialQuote ? 'Payout / Player' : 'Est. Payout / Player'}
             </span>
-            <span className="text-sm sm:text-base font-black font-mono text-emerald-400">
-              ${payoutPerPlayer.toFixed(2)}
+            <span
+              className={`text-sm sm:text-base ${
+                hasSubmittedLegs
+                  ? 'font-black font-mono text-emerald-400'
+                  : 'text-gray-500 font-mono font-bold'
+              }`}
+            >
+              {hasSubmittedLegs ? `$${payoutPerPlayer.toFixed(2)}` : '—'}
             </span>
           </div>
         </div>
 
-        {!isOfficialQuote && showEstimateInfo && (
+        {!isOfficialQuote && hasSubmittedLegs && showEstimateInfo && (
           <p className="mt-2.5 px-2.5 py-2 rounded-lg bg-amber-950/30 border border-amber-800/40 text-[11px] text-amber-200/90 leading-relaxed animate-fadeIn">
             * Estimated via independent leg math (not Kalshi&apos;s live RFQ combo calculator). Final payout may vary with market spread or SGP correlation.
           </p>
