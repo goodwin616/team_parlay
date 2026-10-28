@@ -7,9 +7,10 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4.10-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Python 3.14](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Firebase](https://img.shields.io/badge/Firebase-v2_Functions_%26_Firestore-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
-[![Vitest](https://img.shields.io/badge/Vitest-160_passed-729B1B?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-168_passed-729B1B?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Pytest](https://img.shields.io/badge/Pytest-86_passed-0A9EDC?logo=pytest&logoColor=white)](https://pytest.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Privacy Policy](https://img.shields.io/badge/Privacy-Policy-emerald.svg)](PRIVACY.md)
 
 > **Live Application**: [https://parlay.goodwin.io](https://parlay.goodwin.io)
 
@@ -152,7 +153,7 @@ team_parlay/
 ### 1. Clone & Install Dependencies
 
 ```bash
-git clone https://github.com/blakegoodwin/team_parlay.git
+git clone https://github.com/goodwin616/team_parlay.git
 cd team_parlay
 ```
 
@@ -279,6 +280,18 @@ firebase deploy --only hosting
 ```
 
 The production web app is accessible at **[parlay.goodwin.io](https://parlay.goodwin.io)**.
+
+---
+
+## 🔒 Privacy & Compliance
+
+Team Parlay takes user privacy, account security, and data integrity seriously:
+- **No Wagering or Financial Transactions**: Informational fantasy league coordination tool only; not a gambling operator.
+- **Zero Data Selling**: User data, Google profile details, and pick selections are never sold, rented, or shared with third-party advertisers or data brokers.
+- **Google OAuth & Audit Logs**: Transparent authentication data handling under Google API Services User Data Policy, salted SHA-256 PIN hashes, and server-side audit logs.
+- **Data Subject Rights**: Full CalOPPA, GDPR, and UK GDPR disclosures with prompt deletion rights via [privacy@goodwin.io](mailto:privacy@goodwin.io).
+
+Read our full legal disclosures in [PRIVACY.md](PRIVACY.md).
 
 ---
 

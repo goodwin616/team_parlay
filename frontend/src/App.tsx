@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   UserCheck,
   LogOut,
+  ShieldCheck,
 } from 'lucide-react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -11,6 +12,7 @@ import { BettorBanner } from './components/BettorBanner';
 import { ParlayCard } from './components/ParlayCard';
 import { PickModal, PickData } from './components/PickModal';
 import { PastSlipsArchive } from './components/PastSlipsArchive';
+import { PrivacyModal } from './components/PrivacyModal';
 import { LeagueLandingPage } from './components/LeagueLandingPage';
 import { LeagueSkeleton } from './components/LeagueSkeleton';
 import { SignInGate } from './components/SignInGate';
@@ -438,6 +440,7 @@ export const App: React.FC = () => {
   // Modals & Live Kalshi / Sleeper Player Board State
   const [isPickOpen, setIsPickOpen] = useState(false);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
   const [isTeamPickerOpen, setIsTeamPickerOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -1082,10 +1085,17 @@ export const App: React.FC = () => {
   // Render Landing Page if no leagueId in URL
   if (!leagueId) {
     return (
-      <LeagueLandingPage
-        onSelectLeague={(id) => navigateToLeague(id)}
-        recentLeagues={recentLeagues}
-      />
+      <>
+        <LeagueLandingPage
+          onSelectLeague={(id) => navigateToLeague(id)}
+          recentLeagues={recentLeagues}
+          onOpenPrivacy={() => setIsPrivacyOpen(true)}
+        />
+        <PrivacyModal
+          isOpen={isPrivacyOpen}
+          onClose={() => setIsPrivacyOpen(false)}
+        />
+      </>
     );
   }
 
@@ -1321,6 +1331,18 @@ export const App: React.FC = () => {
 
                       <button
                         type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          setIsPrivacyOpen(true);
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:text-white hover:bg-white/5 transition flex items-center space-x-2 mt-1 cursor-pointer"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-sleeper-accent" />
+                        <span>Privacy Policy</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={async () => {
                           setIsProfileMenuOpen(false);
                           setCurrentRosterId(null);
@@ -1385,6 +1407,33 @@ export const App: React.FC = () => {
                 oddsFormat={oddsFormat}
                 onToggleOddsFormat={handleToggleOddsFormat}
               />
+
+              {/* App Footer */}
+              <footer className="mt-12 py-6 border-t border-sleeper-border/40 text-center text-xs text-sleeper-muted space-y-2">
+                <div className="flex items-center justify-center space-x-3 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setIsPrivacyOpen(true)}
+                    className="text-gray-400 hover:text-sleeper-accent hover:underline transition font-medium cursor-pointer"
+                  >
+                    Privacy Policy
+                  </button>
+                  <span>•</span>
+                  <a
+                    href="https://github.com/goodwin616/team_parlay"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-sleeper-accent hover:underline transition font-medium"
+                  >
+                    GitHub
+                  </a>
+                  <span>•</span>
+                  <span className="text-gray-500">v1.0 (2026)</span>
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  Team Parlay is an open-source fantasy sports coordination tool. Not a gambling platform.
+                </p>
+              </footer>
             </>
           )}
         </main>
@@ -1410,6 +1459,11 @@ export const App: React.FC = () => {
           isOpen={isArchiveOpen}
           onClose={() => setIsArchiveOpen(false)}
           pastParlays={pastParlays}
+        />
+
+        <PrivacyModal
+          isOpen={isPrivacyOpen}
+          onClose={() => setIsPrivacyOpen(false)}
         />
 
         {/* Team Picker Modal */}

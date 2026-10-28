@@ -6,12 +6,14 @@ interface Props {
   onSelectLeague: (leagueId: string) => void;
   recentLeagues: RecentLeague[];
   initialInputVal?: string;
+  onOpenPrivacy?: () => void;
 }
 
 export const LeagueLandingPage: React.FC<Props> = ({
   onSelectLeague,
   recentLeagues,
   initialInputVal = '',
+  onOpenPrivacy,
 }) => {
   const [inputVal, setInputVal] = useState(initialInputVal);
   const [error, setError] = useState('');
@@ -133,6 +135,32 @@ export const LeagueLandingPage: React.FC<Props> = ({
             </div>
           </div>
         )}
+        {/* Footer */}
+        <footer className="pt-3 pb-6 text-center text-xs text-sleeper-muted space-y-1.5">
+          <div className="flex items-center justify-center space-x-3 text-xs">
+            {onOpenPrivacy && (
+              <button
+                type="button"
+                onClick={onOpenPrivacy}
+                className="text-gray-400 hover:text-sleeper-accent hover:underline transition font-medium cursor-pointer"
+              >
+                Privacy Policy
+              </button>
+            )}
+            {onOpenPrivacy && <span>•</span>}
+            <a
+              href="https://github.com/goodwin616/team_parlay"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-gray-400 hover:text-sleeper-accent hover:underline transition font-medium"
+            >
+              GitHub
+            </a>
+          </div>
+          <p className="text-[11px] text-gray-500">
+            Team Parlay is an open-source fantasy sports coordination tool.
+          </p>
+        </footer>
       </div>
     </div>
   );
