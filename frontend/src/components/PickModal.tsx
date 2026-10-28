@@ -1321,7 +1321,7 @@ export const PickModal: React.FC<Props> = ({
                                                 );
                                                 setSelectedSide("yes");
                                               }}
-                                              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition ${
+                                              className={`w-[106px] sm:w-[116px] py-1.5 px-2 rounded-lg text-xs font-mono font-bold border transition tabular-nums tracking-tight flex items-center justify-center text-center shrink-0 leading-none ${
                                                 isYesDisabled
                                                   ? "opacity-30 cursor-not-allowed bg-sleeper-card/40 text-gray-500 border-sleeper-border/50"
                                                   : isContractSelected &&
@@ -1335,12 +1335,11 @@ export const PickModal: React.FC<Props> = ({
                                                   : undefined
                                               }
                                             >
-                                              YES{" "}
-                                              {formatOddsWithCents(
+                                              {`YES ${formatOddsWithCents(
                                                 contract.yes_odds,
                                                 contract.yes_cents,
                                                 oddsFormat,
-                                              )}
+                                              )}`}
                                             </button>
 
                                             <button
@@ -1353,7 +1352,7 @@ export const PickModal: React.FC<Props> = ({
                                                 );
                                                 setSelectedSide("no");
                                               }}
-                                              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition ${
+                                              className={`w-[106px] sm:w-[116px] py-1.5 px-2 rounded-lg text-xs font-mono font-bold border transition tabular-nums tracking-tight flex items-center justify-center text-center shrink-0 leading-none ${
                                                 isNoDisabled
                                                   ? "opacity-30 cursor-not-allowed bg-sleeper-card/40 text-gray-500 border-sleeper-border/50"
                                                   : isContractSelected &&
@@ -1367,12 +1366,11 @@ export const PickModal: React.FC<Props> = ({
                                                   : undefined
                                               }
                                             >
-                                              NO{" "}
-                                              {formatOddsWithCents(
+                                              {`NO ${formatOddsWithCents(
                                                 contract.no_odds,
                                                 contract.no_cents,
                                                 oddsFormat,
-                                              )}
+                                              )}`}
                                             </button>
                                           </>
                                         );

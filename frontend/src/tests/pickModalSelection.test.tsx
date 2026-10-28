@@ -177,4 +177,26 @@ describe('PickModal Prop Selection Behavior (CR-002)', () => {
     expect(html).toContain('disabled=""');
     expect(html).not.toContain('border-sleeper-accent/60 shadow-sm');
   });
+
+  it('applies uniform fixed width and tabular alignment to player prop YES and NO odds chips (CR-021)', () => {
+    const html = renderToString(
+      <PickModal {...baseProps} initialPlayer={dummyPlayer} />
+    );
+
+    // Verify uniform fixed width styling and tabular-nums on contract selection buttons
+    expect(html).toContain('w-[106px] sm:w-[116px]');
+    expect(html).toContain('tabular-nums');
+    expect(html).toContain('tracking-tight');
+    expect(html).toContain('flex items-center justify-center text-center shrink-0 leading-none');
+    expect(html).toContain('flex items-center space-x-2 shrink-0');
+
+    // Both YES and NO buttons should feature the fixed width class
+    const yesButtonMatches = html.match(/w-\[106px\]\s+sm:w-\[116px\][^>]*>YES\s+/g);
+    expect(yesButtonMatches).not.toBeNull();
+    expect(yesButtonMatches!.length).toBeGreaterThan(0);
+
+    const noButtonMatches = html.match(/w-\[106px\]\s+sm:w-\[116px\][^>]*>NO\s+/g);
+    expect(noButtonMatches).not.toBeNull();
+    expect(noButtonMatches!.length).toBeGreaterThan(0);
+  });
 });
