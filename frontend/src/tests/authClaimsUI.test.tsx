@@ -503,6 +503,32 @@ describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
       expect(authedSyncKey).not.toBe(anonSyncKey);
     });
 
+    it('generates distinct weekSyncKey when liveWeek advances, triggering sync even if league was already synced for prior week', () => {
+      const leagueId = '1312915483992809472';
+      const authKey = 'user_123';
+      const priorWeekKey = `${leagueId}_week_7_${authKey}`;
+      const nextWeekKey = `${leagueId}_week_8_${authKey}`;
+
+      expect(nextWeekKey).not.toBe(priorWeekKey);
+
+      // Simulates detection logic in App.tsx
+      const storedWeek = 7;
+      const liveWeek = 8;
+      let syncCalled = false;
+      let currentSyncRef = priorWeekKey;
+
+      if (liveWeek > storedWeek) {
+        const weekKey = `${leagueId}_week_${liveWeek}_${authKey}`;
+        if (currentSyncRef !== weekKey) {
+          currentSyncRef = weekKey;
+          syncCalled = true;
+        }
+      }
+
+      expect(syncCalled).toBe(true);
+      expect(currentSyncRef).toBe(nextWeekKey);
+    });
+
     it('simulates subscription cleanup and re-subscription on auth change, populating real claims immediately', () => {
       let unsubscriptionsCalled = 0;
       let activeListeners = 0;

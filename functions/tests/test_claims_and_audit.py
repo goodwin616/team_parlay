@@ -7,9 +7,10 @@ from auth_utils import actor_from_auth, claim_status, build_audit_entry
 import main
 
 class FakeDocSnapshot:
-    def __init__(self, doc_id, data=None):
+    def __init__(self, doc_id, data=None, ref=None):
         self.id = doc_id
         self._data = data
+        self.reference = ref
 
     @property
     def exists(self):
@@ -26,7 +27,7 @@ class FakeDocRef:
 
     def get(self, transaction=None):
         data = self.store.get(self.path)
-        return FakeDocSnapshot(self.id, data)
+        return FakeDocSnapshot(self.id, data, ref=self)
 
     def set(self, data, merge=False):
         if merge and self.path in self.store:
@@ -65,6 +66,16 @@ class FakeCollectionRef:
             self._auto_id += 1
             doc_id = f"auto_{self._auto_id}"
         return FakeDocRef(self.store, f"{self.path}/{doc_id}")
+
+    def stream(self):
+        prefix = f"{self.path}/"
+        results = []
+        for k, v in list(self.store.items()):
+            if k.startswith(prefix):
+                remainder = k[len(prefix):]
+                if "/" not in remainder:
+                    results.append(FakeDocSnapshot(remainder, v, ref=self.document(remainder)))
+        return results
 
 class FakeTransaction:
     def __init__(self, store):
@@ -505,6 +516,79 @@ def test_init_or_sync_preserves_claimed_by_and_deletes_pin_hash():
     assert "session_tokens" not in team
     # claimed_by preserved
     assert team["claimed_by"]["uid"] == "existing_user_uid"
+
+def test_init_or_sync_advances_week_and_locks_prior_parlays():
+    fake_db = FakeDB()
+    league_id = "real_sleeper_league"
+    season = "2026"
+
+    # Seed existing league in Week 7 with open Week 7 parlay
+    fake_db.store[f"leagues/{league_id}"] = {
+        "sleeper_league_id": league_id,
+        "name": "Triple Crown Dynasty",
+        "active_season": season,
+        "season": season,
+        "current_week": 7,
+        "source": "sleeper",
+    }
+    fake_db.store[f"leagues/{league_id}/seasons/{season}"] = {
+        "season": season,
+        "league_id": league_id,
+        "name": "Triple Crown Dynasty",
+        "current_week": 7,
+        "source": "sleeper",
+    }
+    fake_db.store[f"leagues/{league_id}/seasons/{season}/parlays/7"] = {
+        "week": 7,
+        "season": season,
+        "status": "open",
+        "bettor": {"roster_id": 1, "owner_name": "Alice", "team_name": "Team Alice", "points_last_week": 65.0},
+        "legs": [{"id": "l_1", "roster_id": 1, "status": "submitted"}],
+    }
+
+    # New request payload representing Week 8, WITHOUT force_sync
+    req = make_request(
+        data={
+            "league_id": league_id,
+            "season": season,
+            "force_sync": False,
+            "sleeper_payload": {
+                "league_info": {"name": "Triple Crown Dynasty", "season": season, "settings": {"leg": 8}},
+                "season": season,
+                "current_week": 8,
+                "rosters": [{"roster_id": 1, "owner_id": "u1"}, {"roster_id": 2, "owner_id": "u2"}],
+                "users": [{"user_id": "u1", "display_name": "Alice"}, {"user_id": "u2", "display_name": "Bob"}],
+                "matchups": [
+                    {"roster_id": 1, "points": 140.0},
+                    {"roster_id": 2, "points": 80.5},
+                ],
+            },
+        },
+        uid="admin_user",
+    )
+
+    with patch("main.get_db", return_value=fake_db), \
+         patch("main.fetch_sleeper_nfl_state", return_value={"week": 8, "season": "2026"}):
+        res = call_fn(main.init_or_sync_league, req)
+
+    assert res["success"] is True
+
+    # Current week metadata must be updated to 8
+    assert fake_db.store[f"leagues/{league_id}"]["current_week"] == 8
+    assert fake_db.store[f"leagues/{league_id}/seasons/{season}"]["current_week"] == 8
+
+    # Week 8 parlay must now exist and be open
+    parlay_8 = fake_db.store.get(f"leagues/{league_id}/seasons/{season}/parlays/8")
+    assert parlay_8 is not None
+    assert parlay_8["week"] == 8
+    assert parlay_8["status"] == "open"
+    # Bettor is lowest scorer from week 7 (Bob / roster 2 with 80.5)
+    assert parlay_8["bettor"]["roster_id"] == 2
+
+    # Prior week 7 parlay must now be locked
+    parlay_7 = fake_db.store.get(f"leagues/{league_id}/seasons/{season}/parlays/7")
+    assert parlay_7 is not None
+    assert parlay_7["status"] == "locked"
 
 def test_firebase_admin_default_app_initialized_on_import():
     import firebase_admin

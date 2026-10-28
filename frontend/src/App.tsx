@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   UserCheck,
   LogOut,
+  RefreshCw,
 } from 'lucide-react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -361,6 +362,8 @@ export const App: React.FC = () => {
     }
     return INITIAL_PARLAY;
   });
+  const parlayRef = useRef(parlay);
+  parlayRef.current = parlay;
   const [pastParlays, setPastParlays] = useState<WeeklyParlay[]>(MOCK_PAST_PARLAYS);
   const [oddsFormat, setOddsFormat] = useState<OddsFormat>(() => {
     if (typeof window !== 'undefined') {
@@ -385,6 +388,9 @@ export const App: React.FC = () => {
   });
   const [leagueError, setLeagueError] = useState<string | null>(null);
   const syncedLeagueRef = useRef<string | null>(null);
+  const currentStoredWeekRef = useRef<number | null>(null);
+  const liveNflWeekRef = useRef<number | null>(null);
+  const syncLeagueFnRef = useRef<((forceSync?: boolean) => Promise<void>) | null>(null);
 
   // Modals & Live Kalshi / Sleeper Player Board State
   const [isPickOpen, setIsPickOpen] = useState(false);
@@ -707,7 +713,9 @@ export const App: React.FC = () => {
 
         const currentWeek = Math.max(
           1,
-          Number(nflState?.week || leagueInfo?.settings?.leg || 1)
+          Number(nflState?.week || 0),
+          Number(leagueInfo?.settings?.leg || 0),
+          1
         );
         const prevWeek = Math.max(1, currentWeek - 1);
 
@@ -835,6 +843,33 @@ export const App: React.FC = () => {
       }
     };
 
+    syncLeagueFnRef.current = syncRealSleeperLeague;
+    let isSubscribed = true;
+
+    // Check live NFL week directly from Sleeper so transitions to a new week are caught immediately
+    if (!isDemo) {
+      fetch('https://api.sleeper.app/v1/state/nfl')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((nflState) => {
+          if (!isSubscribed || !nflState?.week) return;
+          const liveWeek = Number(nflState.week);
+          liveNflWeekRef.current = liveWeek;
+
+          const highestKnownWeek = Math.max(
+            currentStoredWeekRef.current || 0,
+            parlayRef.current?.week || 0
+          );
+          if (highestKnownWeek > 0 && highestKnownWeek < liveWeek) {
+            const weekSyncKey = `${leagueId}_week_${liveWeek}_${authKey}`;
+            if (syncedLeagueRef.current !== weekSyncKey) {
+              syncedLeagueRef.current = weekSyncKey;
+              syncRealSleeperLeague(true);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
     const authKey = user?.uid || 'anon';
     const leagueDocRef = doc(db, 'leagues', leagueId);
     const unsubLeague = onSnapshot(
@@ -842,6 +877,19 @@ export const App: React.FC = () => {
       (snap) => {
         if (snap.exists()) {
           const data = snap.data();
+          const storedWeek = Number(data?.current_week || 0);
+          currentStoredWeekRef.current = storedWeek;
+
+          const liveWeek = liveNflWeekRef.current;
+          if (!isDemo && liveWeek && storedWeek > 0 && storedWeek < liveWeek) {
+            const weekSyncKey = `${leagueId}_week_${liveWeek}_${authKey}`;
+            if (syncedLeagueRef.current !== weekSyncKey) {
+              syncedLeagueRef.current = weekSyncKey;
+              syncRealSleeperLeague(true);
+              return;
+            }
+          }
+
           if (!isDemo && data?.source !== 'sleeper') {
             const forceKey = `${leagueId}_force_${authKey}`;
             if (syncedLeagueRef.current !== forceKey) {
@@ -929,6 +977,17 @@ export const App: React.FC = () => {
           .map(d => d.data() as WeeklyParlay)
           .sort((a, b) => b.week - a.week);
 
+        const liveWeek = liveNflWeekRef.current;
+        const highestParlayWeek = allParlays[0]?.week || 0;
+        if (!isDemo && liveWeek && highestParlayWeek > 0 && highestParlayWeek < liveWeek) {
+          const weekSyncKey = `${leagueId}_week_${liveWeek}_${authKey}`;
+          if (syncedLeagueRef.current !== weekSyncKey) {
+            syncedLeagueRef.current = weekSyncKey;
+            syncRealSleeperLeague(true);
+            return;
+          }
+        }
+
         const active = allParlays.find(p => p.status === 'open') || allParlays[0];
         const isStaleMockParlay =
           !isDemo &&
@@ -949,6 +1008,8 @@ export const App: React.FC = () => {
     );
 
     return () => {
+      isSubscribed = false;
+      syncLeagueFnRef.current = null;
       unsubLeague();
       unsubTeams();
       unsubParlays();
@@ -1084,28 +1145,30 @@ export const App: React.FC = () => {
                 <ArrowLeftRight className="w-3.5 h-3.5 text-sleeper-accent shrink-0" />
                 <span className="hidden xs:inline">Switch League</span>
               </button>
+
+              {!isDemo && (
+                <button
+                  type="button"
+                  onClick={() => syncLeagueFnRef.current?.(true)}
+                  disabled={isRealLeagueLoading}
+                  aria-label="Sync League Data"
+                  title="Sync latest week and scores from Sleeper"
+                  className="h-9 px-2.5 rounded-xl bg-sleeper-dark border border-white/10 text-xs font-medium text-gray-300 hover:text-white hover:border-white/25 transition inline-flex items-center space-x-1.5 shrink-0 active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-sleeper-accent shrink-0 ${isRealLeagueLoading ? 'animate-spin' : ''}`} />
+                  <span className="hidden xs:inline">Sync</span>
+                </button>
+              )}
             </div>
 
             {/* Action Pills */}
             <div className="flex items-center space-x-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsArchiveOpen(true)}
-                aria-label="View Past Slips Archive"
-                className="h-9 min-w-[36px] px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 text-xs font-semibold text-gray-300 hover:text-white hover:border-white/25 transition inline-flex items-center justify-center space-x-1.5 active:scale-95 shadow-sm cursor-pointer"
-                title="Past Slips Archive"
-              >
-                <History className="w-4 h-4 text-sleeper-accent shrink-0" />
-                <span className="hidden sm:inline">Archive</span>
-              </button>
-
               {/* Team Picker Badge with ⚠️ if claimed by another user or Select Your Team CTA */}
               {isRealLeagueLoading ? (
                 <div
                   data-testid="header-user-skeleton"
                   className="h-9 px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 animate-pulse flex items-center space-x-2 shrink-0"
                 >
-                  <div className="w-5 h-5 rounded-full bg-white/10" />
                   <div className="w-16 sm:w-20 h-3 bg-white/10 rounded" />
                 </div>
               ) : currentRosterId === null || !currentTeam ? (
@@ -1135,17 +1198,6 @@ export const App: React.FC = () => {
                       : 'Click to Switch or Claim Team'
                   }
                 >
-                  <div className="w-5 h-5 rounded-full bg-sleeper-accent/20 text-sleeper-accent text-[10px] font-black flex items-center justify-center shrink-0">
-                    {currentTeam.owner_name
-                      ? currentTeam.owner_name
-                          .trim()
-                          .split(/\s+/)
-                          .map((p) => p[0])
-                          .slice(0, 2)
-                          .join('')
-                          .toUpperCase()
-                      : 'U'}
-                  </div>
                   <span className="truncate max-w-[70px] xs:max-w-[100px] sm:max-w-[130px] md:max-w-none font-bold text-white">
                     {currentTeam.owner_name}
                   </span>
@@ -1204,6 +1256,18 @@ export const App: React.FC = () => {
                       >
                         <UserCheck className="w-3.5 h-3.5 text-sleeper-accent" />
                         <span>Change Fantasy Team</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          setIsArchiveOpen(true);
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:text-white hover:bg-white/5 transition flex items-center space-x-2 mt-1 cursor-pointer"
+                      >
+                        <History className="w-3.5 h-3.5 text-sleeper-accent" />
+                        <span>Past Slips Archive</span>
                       </button>
 
                       <button

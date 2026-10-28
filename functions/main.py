@@ -157,6 +157,20 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     "users": client_sleeper.get("users") or [],
                     "matchups": client_sleeper.get("matchups") or [],
                 }
+                # Check if live NFL state indicates a more advanced week than client payload
+                try:
+                    live_nfl_state = fetch_sleeper_nfl_state()
+                    live_nfl_week = int(live_nfl_state.get("week") or 0)
+                    if live_nfl_week > current_week:
+                        current_week = live_nfl_week
+                        prev_week = max(1, current_week - 1)
+                        try:
+                            fresh_data = fetch_sleeper_league_data(league_id, prev_week)
+                            sleeper_data["matchups"] = fresh_data.get("matchups") or sleeper_data["matchups"]
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
             else:
                 league_info = fetch_sleeper_league_info(league_id)
                 try:
@@ -180,10 +194,16 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
             season_ref = get_season_ref(db, league_id, season)
             season_doc = season_ref.get()
+            existing_season_data = season_doc.to_dict() if season_doc.exists else {}
+            existing_week = int(existing_season_data.get("current_week") or 0)
+            parlay_doc_exists = season_ref.collection("parlays").document(str(current_week)).get().exists
+
             if (
                 season_doc.exists
                 and not data.get("force_sync")
-                and (season_doc.to_dict() or {}).get("source") == "sleeper"
+                and existing_season_data.get("source") == "sleeper"
+                and existing_week == current_week
+                and parlay_doc_exists
             ):
                 return {"success": True, "league": existing_meta, "season": season, "source": "sleeper"}
 
@@ -271,6 +291,16 @@ def init_or_sync_league(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     "actual_payout": None,
                     "actual_odds_american": None,
                 })
+
+            # Lock prior week parlays
+            try:
+                for p_doc in season_ref.collection("parlays").stream():
+                    if p_doc.id != str(current_week):
+                        p_val = p_doc.to_dict() or {}
+                        if p_val.get("status") == "open":
+                            p_doc.reference.update({"status": "locked"})
+            except Exception:
+                pass
 
             return {"success": True, "league": league_meta, "season": season, "source": "sleeper"}
         except Exception as exc:
