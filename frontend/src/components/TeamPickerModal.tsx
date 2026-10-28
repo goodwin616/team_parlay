@@ -16,6 +16,26 @@ interface TeamPickerModalProps {
   onTeamSelected: (rosterId: number, claimedBy?: any) => void;
 }
 
+export function selectTeamInDemoMode({
+  team,
+  currentUserId,
+  onTeamSelected,
+  onClose,
+}: {
+  team: TeamProfile;
+  currentUserId?: string;
+  onTeamSelected: (rosterId: number, claimedBy?: any) => void;
+  onClose: () => void;
+}): void {
+  const demoClaimedBy = team.claimed_by || {
+    uid: currentUserId || 'demo_user',
+    name: 'Demo Manager',
+    claimed_at: new Date().toISOString(),
+  };
+  onTeamSelected(team.roster_id, demoClaimedBy);
+  onClose();
+}
+
 export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
   isOpen,
   onClose,
@@ -38,6 +58,17 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
 
   const handleSelectTeam = async (team: TeamProfile, confirm = false) => {
     setError(null);
+
+    if (leagueId.toLowerCase() === 'demo') {
+      selectTeamInDemoMode({
+        team,
+        currentUserId,
+        onTeamSelected,
+        onClose,
+      });
+      return;
+    }
+
     if (!confirm) {
       setLoadingRosterId(team.roster_id);
     } else {

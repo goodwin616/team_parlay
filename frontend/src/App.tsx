@@ -5,6 +5,8 @@ import {
   UserCheck,
   LogOut,
   ShieldCheck,
+  Menu,
+  LogIn,
 } from 'lucide-react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -24,6 +26,7 @@ import {
 } from './services/kalshi';
 import {
   useAuthUser,
+  signInWithGoogle,
   signOutUser,
   saveCachedTeamId,
   getCachedTeamId,
@@ -355,6 +358,95 @@ export async function resolveUserTeam({
   return { rosterId: null, openPicker: true };
 }
 
+export interface SubmitPickOptions {
+  currentRosterId: number;
+  currentTeam: TeamProfile;
+  pick: PickData;
+  parlay: WeeklyParlay;
+  isClaimedByOther?: boolean;
+  user?: { uid: string; displayName?: string | null; photoURL?: string | null } | null;
+  isDemo?: boolean;
+  leagueId: string;
+  season: string;
+  submitFn?: (params: any) => Promise<any>;
+}
+
+export async function submitPickToParlay({
+  currentRosterId,
+  currentTeam,
+  pick,
+  parlay,
+  isClaimedByOther = false,
+  user = null,
+  isDemo = false,
+  leagueId,
+  season,
+  submitFn,
+}: SubmitPickOptions): Promise<{
+  updatedParlay: WeeklyParlay;
+  newLeg: ParlayLeg;
+  calledSubmitFn: boolean;
+}> {
+  const newLeg: ParlayLeg = {
+    id: `leg_${currentRosterId}_${Date.now()}`,
+    roster_id: currentRosterId,
+    team_name: currentTeam.team_name,
+    owner_name: currentTeam.owner_name,
+    description: pick.description,
+    nfl_team: pick.nfl_team,
+    odds_american: pick.odds_american,
+    odds_decimal: pick.odds_decimal,
+    price_cents: pick.price_cents,
+    kalshi_market_ticker: pick.kalshi_market_ticker,
+    kalshi_side: pick.kalshi_side,
+    kickoff_time: pick.kickoff_time,
+    game_id: pick.game_id,
+    status: 'submitted',
+    last_edited_by: user
+      ? {
+          uid: user.uid,
+          name: user.displayName || 'Manager',
+          photo_url: user.photoURL || undefined,
+        }
+      : (isDemo ? { uid: 'demo_user', name: 'Demo Manager' } : undefined),
+    last_edited_at: new Date().toISOString(),
+    edited_by_non_claimer: isClaimedByOther,
+  };
+
+  const updatedLegs: ParlayLeg[] = parlay.legs.map((leg) =>
+    leg.roster_id === currentRosterId ? { ...leg, ...newLeg } : leg
+  );
+  const stats = calculateParlayStats(updatedLegs, 5.0);
+
+  const updatedParlay: WeeklyParlay = {
+    ...parlay,
+    legs: updatedLegs,
+    estimated_odds_american: stats.odds_american,
+    estimated_multiplier: stats.multiplier,
+    estimated_payout: stats.estimated_payout,
+    combined_probability_cents: stats.combined_probability_cents,
+    contains_sgp: stats.contains_sgp,
+    earliest_kickoff: stats.earliest_kickoff || parlay.earliest_kickoff,
+  };
+
+  if (isDemo) {
+    return { updatedParlay, newLeg, calledSubmitFn: false };
+  }
+
+  if (submitFn) {
+    await submitFn({
+      league_id: leagueId,
+      season,
+      roster_id: currentRosterId,
+      week: parlay.week,
+      leg: newLeg,
+    });
+    return { updatedParlay, newLeg, calledSubmitFn: true };
+  }
+
+  return { updatedParlay, newLeg, calledSubmitFn: false };
+}
+
 export const App: React.FC = () => {
   const { user, loading: authLoading } = useAuthUser();
 
@@ -362,7 +454,15 @@ export const App: React.FC = () => {
   const [leagueId, setLeagueId] = useState<string | null>(() =>
     typeof window !== 'undefined' ? getLeagueIdFromLocation(window.location) : null
   );
-  const [leagueName, setLeagueName] = useState<string>('Sleeper League');
+  const [leagueName, setLeagueName] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const initialId = getLeagueIdFromLocation(window.location);
+      if (initialId && initialId.toLowerCase() === 'demo') {
+        return 'Demo Sleeper League';
+      }
+    }
+    return 'Sleeper League';
+  });
   const [recentLeagues, setRecentLeagues] = useState<RecentLeague[]>(() =>
     getRecentLeagues()
   );
@@ -381,8 +481,13 @@ export const App: React.FC = () => {
   const [currentRosterId, setCurrentRosterId] = useState<number | null>(() => {
     if (typeof window !== 'undefined') {
       const lid = getLeagueIdFromLocation(window.location);
-      if (lid && user) {
-        return getCachedTeamId(lid, user.uid);
+      if (lid) {
+        if (lid.toLowerCase() === 'demo') {
+          return getCachedTeamId('demo', user?.uid || 'demo_user');
+        }
+        if (user) {
+          return getCachedTeamId(lid, user.uid);
+        }
       }
     }
     return null;
@@ -688,7 +793,27 @@ export const App: React.FC = () => {
 
   // Retrieve user's saved team on sign-in / league change
   useEffect(() => {
-    if (!leagueId || !user) {
+    if (!leagueId) {
+      setCurrentRosterId(null);
+      currentRosterIdRef.current = null;
+      return;
+    }
+
+    const isDemo = leagueId.toLowerCase() === 'demo';
+
+    if (isDemo && !user) {
+      const cached = getCachedTeamId('demo', 'demo_user');
+      if (cached !== null) {
+        setCurrentRosterId(cached);
+        currentRosterIdRef.current = cached;
+      } else {
+        setCurrentRosterId(null);
+        currentRosterIdRef.current = null;
+      }
+      return;
+    }
+
+    if (!user) {
       setCurrentRosterId(null);
       currentRosterIdRef.current = null;
       return;
@@ -706,7 +831,7 @@ export const App: React.FC = () => {
         leagueId,
         user,
         teams,
-        getMyTeamFn: (p) => getMyTeamFn(p) as any,
+        getMyTeamFn: isDemo ? undefined : ((p) => getMyTeamFn(p) as any),
         getCachedTeamIdFn: getCachedTeamId,
       });
 
@@ -745,14 +870,15 @@ export const App: React.FC = () => {
       setPastParlays(MOCK_PAST_PARLAYS);
       setLeagueName('Demo Sleeper League');
       setIsLoadingLeague(false);
-    } else {
-      setIsLoadingLeague(true);
-      setTeams((prev) => (prev === MOCK_TEAMS ? [] : prev));
-      setParlay((prev) =>
-        prev.legs.some((l) => l.id === 'l1' && l.owner_name === 'Blake') ? EMPTY_PARLAY : prev
-      );
-      setPastParlays([]);
+      return () => {};
     }
+
+    setIsLoadingLeague(true);
+    setTeams((prev) => (prev === MOCK_TEAMS ? [] : prev));
+    setParlay((prev) =>
+      prev.legs.some((l) => l.id === 'l1' && l.owner_name === 'Blake') ? EMPTY_PARLAY : prev
+    );
+    setPastParlays([]);
 
     const syncRealSleeperLeague = async (forceSync = false) => {
       try {
@@ -1121,65 +1247,26 @@ export const App: React.FC = () => {
       return;
     }
 
-    const newLeg: ParlayLeg = {
-      id: `leg_${currentRosterId}_${Date.now()}`,
-      roster_id: currentRosterId,
-      team_name: currentTeam.team_name,
-      owner_name: currentTeam.owner_name,
-      description: pick.description,
-      nfl_team: pick.nfl_team,
-      odds_american: pick.odds_american,
-      odds_decimal: pick.odds_decimal,
-      price_cents: pick.price_cents,
-      kalshi_market_ticker: pick.kalshi_market_ticker,
-      kalshi_side: pick.kalshi_side,
-      kickoff_time: pick.kickoff_time,
-      game_id: pick.game_id,
-      status: 'submitted',
-      last_edited_by: user
-        ? {
-            uid: user.uid,
-            name: user.displayName || 'Manager',
-            photo_url: user.photoURL || undefined,
-          }
-        : undefined,
-      last_edited_at: new Date().toISOString(),
-      edited_by_non_claimer: isClaimedByOther,
-    };
-
-    // Save previous state for rollback on error
     const previousParlay = parlay;
 
-    // Optimistic UI update
-    const updatedLegs: ParlayLeg[] = parlay.legs.map(leg =>
-      leg.roster_id === currentRosterId ? { ...leg, ...newLeg } : leg
-    );
-    const stats = calculateParlayStats(updatedLegs, 5.0);
-
-    setParlay(prev => ({
-      ...prev,
-      legs: updatedLegs,
-      estimated_odds_american: stats.odds_american,
-      estimated_multiplier: stats.multiplier,
-      estimated_payout: stats.estimated_payout,
-      combined_probability_cents: stats.combined_probability_cents,
-      contains_sgp: stats.contains_sgp,
-      earliest_kickoff: stats.earliest_kickoff || prev.earliest_kickoff,
-    }));
-
-    // Persist to Firestore via Cloud Function
     try {
       const submitFn = httpsCallable(functions, 'submit_leg');
-      await submitFn({
-        league_id: leagueId,
+      const { updatedParlay } = await submitPickToParlay({
+        currentRosterId,
+        currentTeam,
+        pick,
+        parlay,
+        isClaimedByOther,
+        user,
+        isDemo,
+        leagueId,
         season,
-        roster_id: currentRosterId,
-        week: parlay.week,
-        leg: newLeg,
+        submitFn: isDemo ? undefined : ((p) => submitFn(p)),
       });
+
+      setParlay(updatedParlay);
     } catch (err: any) {
-      if (leagueId.toLowerCase() !== 'demo') {
-        // Rollback optimistic update on server error
+      if (!isDemo) {
         setParlay(previousParlay);
         alert(err?.message || 'Failed to submit pick to server. Rolled back changes.');
       }
@@ -1187,7 +1274,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <SignInGate user={user} loading={authLoading} leagueName={leagueName}>
+    <SignInGate user={user} loading={authLoading} leagueName={leagueName} enabled={!isDemo}>
       <div className="min-h-screen bg-sleeper-dark text-white selection:bg-sleeper-accent selection:text-black">
         {/* Top Navigation Bar */}
         <header className="sticky top-0 z-40 bg-sleeper-card/90 backdrop-blur-md border-b border-sleeper-border px-3 sm:px-4 py-2.5 sm:py-3">
@@ -1353,6 +1440,89 @@ export const App: React.FC = () => {
                       >
                         <LogOut className="w-3.5 h-3.5" />
                         <span>Sign Out</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Unauthenticated Menu in Demo Mode */}
+              {!user && isDemo && (
+                <div className="relative" ref={profileMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileMenuOpen(prev => !prev)}
+                    className="h-9 px-2.5 sm:px-3 rounded-xl bg-sleeper-dark border border-white/10 hover:border-white/25 flex items-center justify-center space-x-1.5 text-xs text-gray-300 hover:text-white transition active:scale-95 shadow-sm cursor-pointer"
+                    title="Menu & Sign In"
+                    aria-label="Open menu"
+                  >
+                    <Menu className="w-4 h-4 text-sleeper-accent" />
+                    <span className="hidden sm:inline font-medium">Menu</span>
+                  </button>
+
+                  {isProfileMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-sleeper-card border border-sleeper-border shadow-2xl p-3 z-50 animate-fadeIn text-left">
+                      <div className="px-2 py-1.5 border-b border-sleeper-border/60 mb-2">
+                        <p className="text-xs font-bold text-white truncate">
+                          Demo Mode
+                        </p>
+                        <p className="text-[11px] text-sleeper-muted truncate">
+                          Unauthenticated guest
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          setIsTeamPickerOpen(true);
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:text-white hover:bg-white/5 transition flex items-center space-x-2 cursor-pointer"
+                      >
+                        <UserCheck className="w-3.5 h-3.5 text-sleeper-accent" />
+                        <span>Change Fantasy Team</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          setIsArchiveOpen(true);
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:text-white hover:bg-white/5 transition flex items-center space-x-2 mt-1 cursor-pointer"
+                      >
+                        <History className="w-3.5 h-3.5 text-sleeper-accent" />
+                        <span>Past Slips Archive</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          setIsPrivacyOpen(true);
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:text-white hover:bg-white/5 transition flex items-center space-x-2 mt-1 cursor-pointer"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-sleeper-accent" />
+                        <span>Privacy Policy</span>
+                      </button>
+
+                      <div className="my-1 border-t border-sleeper-border/60" />
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setIsProfileMenuOpen(false);
+                          try {
+                            await signInWithGoogle();
+                          } catch {
+                            // User closed popup or cancelled
+                          }
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-sleeper-accent hover:bg-sleeper-accent/10 transition flex items-center space-x-2 cursor-pointer"
+                      >
+                        <LogIn className="w-3.5 h-3.5" />
+                        <span>Sign in with Google</span>
                       </button>
                     </div>
                   )}

@@ -6,6 +6,7 @@ interface SignInGateProps {
   user: any | null;
   loading: boolean;
   leagueName?: string;
+  enabled?: boolean;
 }
 
 export const SignInGate: React.FC<SignInGateProps> = ({
@@ -13,9 +14,14 @@ export const SignInGate: React.FC<SignInGateProps> = ({
   user,
   loading,
   leagueName,
+  enabled = true,
 }) => {
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!enabled) {
+    return <>{children}</>;
+  }
 
   const handleSignIn = async () => {
     try {

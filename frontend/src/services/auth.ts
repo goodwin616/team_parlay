@@ -59,10 +59,12 @@ export function useAuthUser(): { user: User | null; loading: boolean } {
  * Persists the user's selected team ID in localStorage for a specific league and user UID.
  */
 export function saveCachedTeamId(leagueId: string, rosterId: number, uid?: string): void {
-  if (!leagueId || !uid) return;
+  if (!leagueId) return;
+  const effectiveUid = uid || (leagueId.toLowerCase() === 'demo' ? 'demo_user' : '');
+  if (!effectiveUid) return;
   try {
     localStorage.removeItem(`${TEAM_CACHE_PREFIX}${leagueId}`);
-    localStorage.setItem(`${TEAM_CACHE_PREFIX}${uid}_${leagueId}`, String(rosterId));
+    localStorage.setItem(`${TEAM_CACHE_PREFIX}${effectiveUid}_${leagueId}`, String(rosterId));
   } catch {
     // Ignore storage quota errors
   }
@@ -77,8 +79,9 @@ export function getCachedTeamId(leagueId: string, uid?: string): number | null {
     // Clean up / remove any legacy un-scoped entry so old shared values don't leak
     localStorage.removeItem(`${TEAM_CACHE_PREFIX}${leagueId}`);
 
-    if (!uid) return null;
-    const val = localStorage.getItem(`${TEAM_CACHE_PREFIX}${uid}_${leagueId}`);
+    const effectiveUid = uid || (leagueId.toLowerCase() === 'demo' ? 'demo_user' : '');
+    if (!effectiveUid) return null;
+    const val = localStorage.getItem(`${TEAM_CACHE_PREFIX}${effectiveUid}_${leagueId}`);
     if (!val) return null;
     const parsed = parseInt(val, 10);
     return isNaN(parsed) ? null : parsed;
@@ -93,8 +96,9 @@ export function getCachedTeamId(leagueId: string, uid?: string): number | null {
 export function clearCachedTeamId(leagueId: string, uid?: string): void {
   if (!leagueId) return;
   try {
-    if (uid) {
-      localStorage.removeItem(`${TEAM_CACHE_PREFIX}${uid}_${leagueId}`);
+    const effectiveUid = uid || (leagueId.toLowerCase() === 'demo' ? 'demo_user' : '');
+    if (effectiveUid) {
+      localStorage.removeItem(`${TEAM_CACHE_PREFIX}${effectiveUid}_${leagueId}`);
     }
     localStorage.removeItem(`${TEAM_CACHE_PREFIX}${leagueId}`);
   } catch {
