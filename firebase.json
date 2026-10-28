@@ -4,7 +4,7 @@
       "source": "functions",
       "codebase": "default",
       "ignore": ["venv", ".git", "firebase-debug.log", "firebase-debug.*.log", ".env", ".env.*", "secrets/**"],
-      "runtime": "python311"
+      "runtime": "python314"
     }
   ],
   "firestore": {
