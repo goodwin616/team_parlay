@@ -7,9 +7,17 @@ interface Props {
   players: ActivePlayer[];
   onSelectPlayer: (player: ActivePlayer) => void;
   selectedPlayer: ActivePlayer | null;
+  onSearchChange?: (query: string) => void;
+  placeholder?: string;
 }
 
-export const PlayerSearchInput: React.FC<Props> = ({ players, onSelectPlayer, selectedPlayer }) => {
+export const PlayerSearchInput: React.FC<Props> = ({
+  players,
+  onSelectPlayer,
+  selectedPlayer,
+  onSearchChange,
+  placeholder,
+}) => {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -39,11 +47,13 @@ export const PlayerSearchInput: React.FC<Props> = ({ players, onSelectPlayer, se
     onSelectPlayer(player);
     setQuery('');
     setIsOpen(false);
+    onSearchChange?.('');
   };
 
   const handleClear = () => {
     setQuery('');
     setIsOpen(false);
+    onSearchChange?.('');
   };
 
   return (
@@ -70,14 +80,16 @@ export const PlayerSearchInput: React.FC<Props> = ({ players, onSelectPlayer, se
           onChange={(e) => {
             setQuery(e.target.value);
             setIsOpen(true);
+            onSearchChange?.(e.target.value);
           }}
           onFocus={() => {
             if (query.length >= 2) setIsOpen(true);
           }}
           placeholder={
-            selectedPlayer 
+            placeholder ||
+            (selectedPlayer 
               ? `${selectedPlayer.name} (${selectedPlayer.team} - ${selectedPlayer.position})` 
-              : "Type player name (e.g., Saquon, Henry, Mahomes)..."
+              : "Type player name (e.g., Saquon, Henry, Mahomes)...")
           }
           className="w-full bg-sleeper-dark border border-sleeper-border rounded-lg pl-9 pr-9 py-2.5 text-sm text-white placeholder-gray-500 focus:border-sleeper-accent focus:ring-1 focus:ring-sleeper-accent focus:outline-none transition"
           autoComplete="off"
@@ -87,6 +99,7 @@ export const PlayerSearchInput: React.FC<Props> = ({ players, onSelectPlayer, se
         {query && (
           <button
             type="button"
+            aria-label="Clear search"
             onClick={handleClear}
             className="absolute right-3 top-3 text-gray-400 hover:text-white transition"
           >

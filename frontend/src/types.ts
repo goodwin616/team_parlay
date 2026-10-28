@@ -36,7 +36,7 @@ export interface ParlayLeg {
   price_cents?: number;                   // Kalshi contract price in cents (1 to 99), e.g. 54
   kalshi_market_ticker?: string;          // e.g. "KXNFLRUSHYDS-26NOV01-SBARKLEY-75"
   kalshi_side?: 'yes' | 'no';
-  status: 'pending' | 'submitted';
+  status: 'pending' | 'submitted' | 'won' | 'lost' | 'voided' | 'pushed';
   kickoff_time?: string;                  // ISO 8601 string
   last_edited_by?: {
     uid: string;
@@ -50,7 +50,7 @@ export interface ParlayLeg {
 export interface WeeklyParlay {
   week: number;
   season: string;
-  status: 'open' | 'locked';
+  status: 'open' | 'locked' | 'won' | 'lost' | 'voided' | 'pushed';
   contains_sgp: boolean;                  // True if multiple submitted legs share the same game_id
   isRealDataLoaded?: boolean;             // True if loaded from live Sleeper API or Firestore sync
   bettor: {
@@ -63,6 +63,7 @@ export interface WeeklyParlay {
   legs: ParlayLeg[];
   estimated_odds_american: string;        // e.g. "+1450"
   estimated_multiplier: number;           // e.g. 15.50
+  actual_multiplier?: number;             // e.g. 15.50
   estimated_payout: number;               // $5 * multiplier
   combined_probability_cents?: number;    // Implied Kalshi combo price in cents (1 to 99)
   actual_payout: number | null;           // Actual Kalshi combo payout override

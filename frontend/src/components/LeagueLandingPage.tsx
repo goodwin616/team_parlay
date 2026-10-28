@@ -5,13 +5,15 @@ import { parseLeagueIdInput, RecentLeague } from '../services/auth';
 interface Props {
   onSelectLeague: (leagueId: string) => void;
   recentLeagues: RecentLeague[];
+  initialInputVal?: string;
 }
 
 export const LeagueLandingPage: React.FC<Props> = ({
   onSelectLeague,
   recentLeagues,
+  initialInputVal = '',
 }) => {
-  const [inputVal, setInputVal] = useState('');
+  const [inputVal, setInputVal] = useState(initialInputVal);
   const [error, setError] = useState('');
 
   const filteredRecentLeagues = recentLeagues.filter(
@@ -91,6 +93,8 @@ export const LeagueLandingPage: React.FC<Props> = ({
             <span className="text-xs text-gray-400">Just exploring the UI?</span>
             <button
               type="button"
+              aria-label="Explore Demo League"
+              title="Explore Demo League"
               onClick={() => onSelectLeague('demo')}
               className="inline-flex items-center space-x-1.5 text-xs font-bold text-sleeper-accent hover:underline"
             >

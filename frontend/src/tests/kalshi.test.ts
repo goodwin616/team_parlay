@@ -1,9 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   parseKalshiGameMarketsToOptions,
   parseKalshiPropMarket,
   splitEventTeamsCode,
   getNflWeekBucketKey,
+  fetchDirectKalshiNflBoard,
+  extractKalshiPriceCents,
+  extractKalshiKickoffTime,
+  inferTeamsFromKalshiMarket,
+  normalizeNflTeam,
 } from '../services/kalshi';
 
 describe('kalshi v2 market parser', () => {
@@ -158,5 +163,287 @@ describe('kalshi v2 market parser', () => {
       'KXNFL-26OCT25PITNO',
       'KXNFL-26OCT26DALPHI',
     ]);
+  });
+});
+
+describe('Kalshi API error handling and fallback resilience', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('HTTP error status codes & network resilience', () => {
+    it('handles HTTP 500 server errors gracefully without unhandled exceptions', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          status: 500,
+          ok: false,
+          headers: { get: () => 'application/json' },
+          json: async () => ({ error: 'Internal Server Error' }),
+        })
+      );
+
+      const result = await fetchDirectKalshiNflBoard(true);
+      expect(result).toBeDefined();
+      expect(result.games).toEqual([]);
+      expect(result.props).toEqual([]);
+      expect(result.players).toEqual([]);
+      expect(result.live_market_count).toBe(0);
+      expect(typeof result.updated_at).toBe('string');
+    });
+
+    it('handles HTTP 429 rate limit errors with backoff retry exhaustion gracefully', async () => {
+      // Mock setTimeout so backoff delay executes synchronously without slowing tests
+      vi.spyOn(globalThis, 'setTimeout').mockImplementation(((cb: () => void) => {
+        cb();
+        return 0 as any;
+      }) as any);
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          status: 429,
+          ok: false,
+          headers: { get: () => 'application/json' },
+          json: async () => ({ error: 'Too Many Requests' }),
+        })
+      );
+
+      const result = await fetchDirectKalshiNflBoard(true);
+      expect(result).toBeDefined();
+      expect(result.games).toEqual([]);
+      expect(result.props).toEqual([]);
+      expect(result.players).toEqual([]);
+      expect(result.live_market_count).toBe(0);
+    });
+
+    it('recovers when HTTP 429 succeeds on subsequent retry attempt', async () => {
+      vi.spyOn(globalThis, 'setTimeout').mockImplementation(((cb: () => void) => {
+        cb();
+        return 0 as any;
+      }) as any);
+
+      let callCount = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation(async () => {
+          callCount++;
+          // First attempt is rate-limited 429, second attempt succeeds with valid markets
+          if (callCount % 2 === 1) {
+            return {
+              status: 429,
+              ok: false,
+              headers: { get: () => 'application/json' },
+              json: async () => ({ error: 'Rate limit' }),
+            };
+          }
+          return {
+            status: 200,
+            ok: true,
+            headers: { get: () => 'application/json' },
+            json: async () => ({
+              markets: [
+                {
+                  ticker: 'KXNFLGAME-26OCT29CARGB-GB',
+                  event_ticker: 'KXNFLGAME-26OCT29CARGB',
+                  title: 'Green Bay wins',
+                  status: 'active',
+                  yes_ask_dollars: '0.6000',
+                  no_ask_dollars: '0.4000',
+                  expected_expiration_time: '2026-10-30T03:15:00Z',
+                },
+                {
+                  ticker: 'KXNFLGAME-26OCT29CARGB-CAR',
+                  event_ticker: 'KXNFLGAME-26OCT29CARGB',
+                  title: 'Carolina wins',
+                  status: 'active',
+                  yes_ask_dollars: '0.4000',
+                  no_ask_dollars: '0.6000',
+                  expected_expiration_time: '2026-10-30T03:15:00Z',
+                },
+              ],
+            }),
+          };
+        })
+      );
+
+      const result = await fetchDirectKalshiNflBoard(true);
+      expect(result).toBeDefined();
+      expect(result.games.length).toBeGreaterThan(0);
+      expect(result.games[0].home_team).toBe('GB');
+      expect(result.games[0].away_team).toBe('CAR');
+    });
+
+    it('handles network failure (fetch rejected promise) without unhandled exceptions', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockRejectedValue(new Error('Network offline or DNS resolution failed'))
+      );
+
+      const result = await fetchDirectKalshiNflBoard(true);
+      expect(result).toBeDefined();
+      expect(result.games).toEqual([]);
+      expect(result.props).toEqual([]);
+      expect(result.players).toEqual([]);
+      expect(result.live_market_count).toBe(0);
+    });
+
+    it('handles non-JSON upstream responses (e.g. HTML 502/503 Cloudflare error page)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          status: 502,
+          ok: false,
+          headers: { get: () => 'text/html; charset=UTF-8' },
+          json: async () => {
+            throw new Error('Unexpected token < in JSON at position 0');
+          },
+        })
+      );
+
+      const result = await fetchDirectKalshiNflBoard(true);
+      expect(result).toBeDefined();
+      expect(result.games).toEqual([]);
+      expect(result.props).toEqual([]);
+    });
+  });
+
+  describe('Fallback behavior with empty or malformed market payloads', () => {
+    it('handles empty markets array { markets: [] } safely', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          status: 200,
+          ok: true,
+          headers: { get: () => 'application/json' },
+          json: async () => ({ markets: [] }),
+        })
+      );
+
+      const result = await fetchDirectKalshiNflBoard(true);
+      expect(result.games).toEqual([]);
+      expect(result.props).toEqual([]);
+      expect(result.players).toEqual([]);
+      expect(result.live_market_count).toBe(0);
+    });
+
+    it('handles malformed market payload where markets is null or not an array', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          status: 200,
+          ok: true,
+          headers: { get: () => 'application/json' },
+          json: async () => ({ markets: null }),
+        })
+      );
+
+      const result = await fetchDirectKalshiNflBoard(true);
+      expect(result.games).toEqual([]);
+      expect(result.props).toEqual([]);
+      expect(result.players).toEqual([]);
+      expect(result.live_market_count).toBe(0);
+    });
+
+    it('parseKalshiGameMarketsToOptions filters out null, undefined, settled, and illiquid markets', () => {
+      const corruptedMarkets = [
+        null,
+        undefined,
+        {},
+        { status: 'finalized', ticker: 'KXNFLGAME-1' },
+        { status: 'settled', ticker: 'KXNFLGAME-2' },
+        { status: 'closed', ticker: 'KXNFLGAME-3' },
+        // Illiquid 100/100 ask
+        { status: 'active', yes_ask_dollars: '1.0000', no_ask_dollars: '1.0000' },
+      ];
+
+      const options = parseKalshiGameMarketsToOptions(corruptedMarkets);
+      expect(options).toEqual([]);
+    });
+
+    it('provides default spread, total, and moneyline values when secondary markets are missing', () => {
+      // Only ML provided, spread and totals missing
+      const partialMarkets = [
+        {
+          ticker: 'KXNFLGAME-26OCT29CARGB-GB',
+          event_ticker: 'KXNFLGAME-26OCT29CARGB',
+          title: 'Green Bay wins',
+          status: 'active',
+          yes_ask_dollars: '0.6500',
+          no_ask_dollars: '0.3500',
+          expected_expiration_time: '2026-10-30T03:15:00Z',
+        },
+        {
+          ticker: 'KXNFLGAME-26OCT29CARGB-CAR',
+          event_ticker: 'KXNFLGAME-26OCT29CARGB',
+          title: 'Carolina wins',
+          status: 'active',
+          yes_ask_dollars: '0.3500',
+          no_ask_dollars: '0.6500',
+          expected_expiration_time: '2026-10-30T03:15:00Z',
+        },
+      ];
+
+      const options = parseKalshiGameMarketsToOptions(partialMarkets);
+      expect(options).toHaveLength(1);
+      const g = options[0];
+      // Provided ML is parsed
+      expect(g.ml_home.price_cents).toBe(65);
+      expect(g.ml_away.price_cents).toBe(35);
+      // Missing spread falls back to synthetic standard defaults
+      expect(g.spread_home.point).toBe(-2.5);
+      expect(g.spread_away.point).toBe(2.5);
+      // Missing total falls back to synthetic standard defaults
+      expect(g.total_over.point).toBe(47.5);
+      expect(g.total_under.point).toBe(47.5);
+    });
+
+    it('extractKalshiPriceCents defaults to 54 cents when price fields are missing or invalid', () => {
+      expect(extractKalshiPriceCents(null)).toBe(54);
+      expect(extractKalshiPriceCents({})).toBe(54);
+      expect(extractKalshiPriceCents({ yes_ask_dollars: 'invalid' })).toBe(54);
+      expect(extractKalshiPriceCents({ yes_ask_dollars: '-0.5000' })).toBe(54);
+      expect(extractKalshiPriceCents({ yes_ask_dollars: '0' })).toBe(54);
+      // Valid dollar price converts to cents
+      expect(extractKalshiPriceCents({ yes_ask_dollars: '0.7200' })).toBe(72);
+      // Clamped to 1 - 99
+      expect(extractKalshiPriceCents({ yes_ask_dollars: '1.2000' })).toBe(99);
+    });
+
+    it('extractKalshiKickoffTime provides safe fallbacks when expiration is missing or malformed', () => {
+      expect(extractKalshiKickoffTime(null)).toBeDefined();
+      expect(extractKalshiKickoffTime({})).toBeDefined();
+
+      const validTime = '2026-10-25T17:00:00Z';
+      expect(extractKalshiKickoffTime({ close_time: validTime })).toBe(validTime);
+
+      // Shifts expected_expiration_time back 3 hours for kickoff estimate
+      const expectedTime = '2026-10-25T20:00:00Z';
+      const parsedKickoff = extractKalshiKickoffTime({
+        expected_expiration_time: expectedTime,
+      });
+      expect(parsedKickoff).toBe('2026-10-25T17:00:00.000Z');
+    });
+
+    it('inferTeamsFromKalshiMarket and normalizeNflTeam safely handle missing or unknown team data', () => {
+      expect(normalizeNflTeam('')).toBe('');
+      expect(normalizeNflTeam('unknown_team')).toBe('UNKNOWN_TEAM');
+      expect(normalizeNflTeam('Philadelphia Eagles')).toBe('PHI');
+      expect(normalizeNflTeam('Chiefs')).toBe('KC');
+
+      const inferred = inferTeamsFromKalshiMarket({});
+      expect(inferred.awayTeam).toBe('AWAY');
+      expect(inferred.homeTeam).toBe('HOME');
+    });
+
+    it('parseKalshiPropMarket handles incomplete payloads with safe fallbacks', () => {
+      const prop = parseKalshiPropMarket({});
+      expect(prop.player_name).toBe('');
+      expect(prop.nfl_team).toBe('NFL');
+      expect(prop.position).toBe('FLEX');
+      expect(prop.stat_category).toBe('Touchdowns');
+      expect(prop.yes_cents).toBe(54);
+      expect(prop.no_cents).toBe(46);
+    });
   });
 });

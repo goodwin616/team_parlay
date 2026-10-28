@@ -16,9 +16,53 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
 
   if (!isOpen) return null;
 
+  const renderStatusBadge = (status?: string) => {
+    const s = (status || 'open').toLowerCase();
+    if (s === 'won') {
+      return (
+        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+          Won
+        </span>
+      );
+    }
+    if (s === 'lost') {
+      return (
+        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">
+          Lost
+        </span>
+      );
+    }
+    if (s === 'voided' || s === 'pushed') {
+      return (
+        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gray-500/15 text-gray-300 border border-gray-500/30">
+          {s === 'voided' ? 'Voided' : 'Pushed'}
+        </span>
+      );
+    }
+    if (s === 'locked') {
+      return (
+        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+          Locked
+        </span>
+      );
+    }
+    return (
+      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sleeper-accent/15 text-sleeper-accent border border-sleeper-accent/30">
+        Open
+      </span>
+    );
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-lg sm:max-w-xl lg:max-w-2xl overflow-hidden shadow-2xl my-auto">
+    <div
+      data-testid="archive-backdrop"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 backdrop-blur-sm animate-fadeIn"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-lg sm:max-w-xl lg:max-w-2xl overflow-hidden shadow-2xl my-auto"
+      >
         {/* Header */}
         <div className="flex justify-between items-center px-5 py-4 border-b border-sleeper-border bg-sleeper-card">
           <div className="flex items-center space-x-2">
@@ -30,6 +74,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
           </div>
           <button
             onClick={onClose}
+            aria-label="Close archive"
             className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition"
           >
             <X className="w-5 h-5" />
@@ -41,12 +86,19 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
           {pastParlays.length === 0 ? (
             <div className="py-12 text-center text-gray-400 text-xs">
               <Calendar className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-              <p className="font-semibold text-gray-300">No past slips on file</p>
+              <p className="font-semibold text-gray-300">No past parlay slips found</p>
               <p className="text-gray-500 text-[11px] mt-1">Locked slips from previous weeks will appear here.</p>
             </div>
           ) : (
             pastParlays.map((parlay) => {
               const isExpanded = expandedWeek === parlay.week;
+              const multiplier =
+                parlay.actual_multiplier ??
+                parlay.estimated_multiplier ??
+                (parlay.actual_payout != null
+                  ? parlay.actual_payout / 5
+                  : parlay.estimated_payout / 5);
+
               return (
                 <div
                   key={parlay.week}
@@ -60,24 +112,26 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                     <div>
                       <div className="flex items-center space-x-2">
                         <span className="text-xs font-black uppercase text-sleeper-accent font-mono">
-                          Week {parlay.week}
+                          Week {parlay.week} Parlay
                         </span>
+                        {renderStatusBadge(parlay.status)}
                         <span className="text-xs text-gray-300 font-semibold">
                           Bettor: {parlay.bettor.owner_name}
                         </span>
                       </div>
                       <div className="text-[11px] text-gray-400 mt-0.5">
                         {parlay.legs.length} legs • Odds: {parlay.actual_odds_american || parlay.estimated_odds_american}
+                        {multiplier != null && !Number.isNaN(multiplier) ? ` • ${multiplier.toFixed(1)}x` : ''}
                       </div>
                     </div>
 
                     <div className="flex items-center space-x-3">
                       <div className="text-right">
                         <span className="text-[10px] text-gray-400 block leading-tight">
-                          {parlay.actual_payout ? 'Payout' : 'Est Payout'}
+                          {parlay.actual_payout != null ? 'Payout' : 'Est Payout'}
                         </span>
                         <span className="text-sm font-extrabold font-mono text-sleeper-accent">
-                          ${parlay.actual_payout?.toFixed(2) || parlay.estimated_payout.toFixed(2)}
+                          ${(parlay.actual_payout ?? parlay.estimated_payout).toFixed(2)}
                         </span>
                       </div>
                       {isExpanded ? (
@@ -98,6 +152,21 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                               <div className="flex items-center space-x-1.5 flex-wrap">
                                 <span className="font-semibold text-white truncate">{leg.owner_name}</span>
                                 <span className="text-[10px] text-sleeper-muted">({leg.team_name})</span>
+                                {leg.status && (
+                                  <span
+                                    className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                      leg.status === 'won'
+                                        ? 'bg-emerald-500/15 text-emerald-400'
+                                        : leg.status === 'lost'
+                                        ? 'bg-red-500/15 text-red-400'
+                                        : leg.status === 'voided' || leg.status === 'pushed'
+                                        ? 'bg-gray-500/15 text-gray-300'
+                                        : 'bg-sleeper-dark text-gray-400 border border-sleeper-border'
+                                    }`}
+                                  >
+                                    {leg.status}
+                                  </span>
+                                )}
                               </div>
                               <p className="text-gray-300 mt-0.5 leading-tight">{leg.description}</p>
                             </div>
