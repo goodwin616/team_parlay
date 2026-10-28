@@ -22,3 +22,5 @@ pubsub-debug.log
 functions/.env
 frontend/.env
 functions/secrets/
+.DS_Store
+*.DS_Store

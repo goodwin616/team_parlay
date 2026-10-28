@@ -16,6 +16,10 @@
 
 A collaborative fullstack fantasy football application where the lowest-scoring fantasy manager each week funds a \$5 community parlay ticket on Kalshi, built leg-by-leg by the entire league.
 
+<p align="center">
+  <img src="assets/screenshot.png" alt="Team Parlay Application Dashboard" width="100%" />
+</p>
+
 ---
 
 ## Overview
