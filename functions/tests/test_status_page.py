@@ -1,6 +1,6 @@
 import json
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from status_page import (
     StatusPageError,
     extract_status_request_params,
@@ -231,7 +231,8 @@ class TestBuildSanitizedLeagueStatus:
         assert payload["week"] == 4
         assert payload["parlay"]["counts"]["total_managers"] == 5
 
-    def test_raises_404_when_league_or_week_not_found(self):
+    @patch("sleeper_sync.fetch_sleeper_league_info", side_effect=ValueError("Sleeper league not found"))
+    def test_raises_404_when_league_or_week_not_found(self, _mock_sleeper):
         db = self._mock_firestore(None, [], {})
         with pytest.raises(StatusPageError) as exc:
             build_sanitized_league_status(db, "nonexistent_league")

@@ -3,6 +3,13 @@ import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from sleeper_sync import (
+    fetch_sleeper_nfl_state,
+    fetch_sleeper_league_info,
+    fetch_sleeper_league_data,
+    build_teams_from_sleeper,
+    determine_weekly_bettor,
+)
 
 
 class StatusPageError(Exception):
@@ -334,6 +341,95 @@ def _sanitize_parlay_payload(
     }
 
 
+def _build_readonly_status_from_sleeper(
+    league_id: str,
+    requested_week: Optional[int] = None,
+    requested_season: Optional[str] = None,
+) -> Dict[str, Any]:
+    try:
+        league_info = fetch_sleeper_league_info(league_id)
+        try:
+            nfl_state = fetch_sleeper_nfl_state()
+            current_week = int(nfl_state.get("week") or 1)
+            nfl_season = nfl_state.get("season")
+        except Exception:
+            current_week = int((league_info.get("settings") or {}).get("leg") or 1)
+            nfl_season = None
+        current_week = max(1, current_week)
+        target_week = int(requested_week or current_week)
+        prev_week = max(1, target_week - 1)
+        sleeper_data = fetch_sleeper_league_data(league_id, prev_week)
+        teams = build_teams_from_sleeper(
+            sleeper_data.get("rosters") or [],
+            sleeper_data.get("users") or [],
+        )
+        if not teams:
+            raise ValueError("No teams found")
+        bettor = determine_weekly_bettor(
+            sleeper_data.get("matchups") or [],
+            sleeper_data.get("rosters") or [],
+            sleeper_data.get("users") or [],
+        )
+        if not bettor and teams:
+            bettor = {
+                "roster_id": teams[0]["roster_id"],
+                "team_name": teams[0]["team_name"],
+                "owner_name": teams[0]["owner_name"],
+                "points_last_week": 0.0,
+            }
+        season = str(
+            requested_season
+            or league_info.get("season")
+            or nfl_season
+            or datetime.now(timezone.utc).year
+        )
+        league_name = str(league_info.get("name") or f"Sleeper League {league_id}")
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        parlay_data = {
+            "week": target_week,
+            "season": season,
+            "status": "open" if target_week == current_week else "locked",
+            "outcome": "pending",
+            "settlement_status": "pending",
+            "contains_sgp": False,
+            "bettor": bettor,
+            "earliest_kickoff": None,
+            "legs": [
+                {
+                    "id": f"l_{t['roster_id']}",
+                    "roster_id": t["roster_id"],
+                    "team_name": t["team_name"],
+                    "owner_name": t["owner_name"],
+                    "nfl_team": "NFL",
+                    "description": "",
+                    "odds_american": "-110",
+                    "odds_decimal": 1.91,
+                    "status": "pending",
+                }
+                for t in teams
+            ],
+            "estimated_odds_american": "+100",
+            "estimated_multiplier": 1.0,
+            "estimated_payout": 5.0,
+            "actual_payout": None,
+            "actual_odds_american": None,
+        }
+        return _sanitize_parlay_payload(
+            league_id=league_id,
+            league_name=league_name,
+            season=season,
+            current_week=current_week,
+            updated_at=now_iso,
+            teams_data=teams,
+            parlay_data=parlay_data,
+        )
+    except Exception:
+        raise StatusPageError(
+            404,
+            f"League '{league_id}' was not found or has not been initialized yet.",
+        )
+
+
 def build_sanitized_league_status(
     db: Any,
     league_id: str,
@@ -361,9 +457,10 @@ def build_sanitized_league_status(
                 teams_data=DEMO_TEAMS,
                 parlay_data=demo_parlay,
             )
-        raise StatusPageError(
-            404,
-            f"League '{league_id}' was not found or has not been initialized yet.",
+        return _build_readonly_status_from_sleeper(
+            league_id=league_id,
+            requested_week=requested_week,
+            requested_season=requested_season,
         )
 
     league_meta = league_doc.to_dict() or {}
@@ -391,6 +488,12 @@ def build_sanitized_league_status(
                 updated_at=updated_at,
                 teams_data=DEMO_TEAMS,
                 parlay_data=DEMO_PARLAYS[target_week],
+            )
+        if not is_demo:
+            return _build_readonly_status_from_sleeper(
+                league_id=league_id,
+                requested_week=target_week,
+                requested_season=season,
             )
         raise StatusPageError(
             404,
