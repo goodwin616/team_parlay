@@ -31,6 +31,22 @@
     ],
     "rewrites": [
       {
+        "source": "/status/**",
+        "function": "league_status"
+      },
+      {
+        "source": "/*/status",
+        "function": "league_status"
+      },
+      {
+        "source": "/league/*/status",
+        "function": "league_status"
+      },
+      {
+        "source": "/leagues/*/status",
+        "function": "league_status"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

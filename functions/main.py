@@ -1,4 +1,5 @@
 import os
+import json
 
 # Prevent macOS Objective-C / _scproxy fork crashes in Gunicorn workers
 os.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
@@ -11,6 +12,13 @@ from typing import Dict, Any, Optional
 import firebase_admin
 from firebase_admin import firestore
 from firebase_functions import https_fn
+from status_page import (
+    StatusPageError,
+    extract_status_request_params,
+    build_sanitized_league_status,
+    render_status_markdown,
+    render_status_html,
+)
 
 # If running in local emulator without explicit project set, default project id
 if (os.environ.get("FIREBASE_AUTH_EMULATOR_HOST") or os.environ.get("FIRESTORE_EMULATOR_HOST")) and not (
@@ -711,4 +719,80 @@ def get_kalshi_nfl_markets(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "authenticated": kalshi_client.is_authenticated,
         "max_leg_odds_percent": get_max_leg_odds_percent(),
     }
+
+
+@https_fn.on_request()
+def league_status(req: https_fn.Request) -> https_fn.Response:
+    """
+    Public, read-only HTTP endpoint for AI agents (e.g. Instinct.ai) and humans
+    to query the current week's (or ?week=N) parlay status for a league without
+    authentication or side-effects.
+    Supports HTML (default), JSON (?format=json), and Markdown (?format=md).
+    """
+    cors_headers = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Accept",
+        "Cache-Control": "no-store, max-age=0",
+    }
+
+    if req.method == "OPTIONS":
+        return https_fn.Response("", status=204, headers=cors_headers)
+
+    if req.method not in ("GET", "HEAD"):
+        return https_fn.Response(
+            json.dumps({"error": "Method not allowed. Use GET."}),
+            status=405,
+            headers={**cors_headers, "Content-Type": "application/json; charset=utf-8"},
+        )
+
+    try:
+        params = extract_status_request_params(
+            path=req.path,
+            args=dict(req.args) if req.args else {},
+            headers=dict(req.headers) if req.headers else {},
+        )
+        db = get_db()
+        payload = build_sanitized_league_status(
+            db=db,
+            league_id=params["league_id"],
+            requested_week=params["week"],
+            requested_season=params["season"],
+        )
+        fmt = params["format"]
+        if fmt == "json":
+            return https_fn.Response(
+                json.dumps(payload, indent=2),
+                status=200,
+                headers={
+                    **cors_headers,
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+            )
+        md_text = render_status_markdown(payload)
+        if fmt == "md":
+            return https_fn.Response(
+                md_text,
+                status=200,
+                headers={
+                    **cors_headers,
+                    "Content-Type": "text/markdown; charset=utf-8",
+                },
+            )
+        html_text = render_status_html(payload, md_text)
+        return https_fn.Response(
+            html_text,
+            status=200,
+            headers={
+                **cors_headers,
+                "Content-Type": "text/html; charset=utf-8",
+            },
+        )
+    except StatusPageError as err:
+        return https_fn.Response(
+            json.dumps({"error": err.message, "status": err.status_code}),
+            status=err.status_code,
+            headers={**cors_headers, "Content-Type": "application/json; charset=utf-8"},
+        )
+
 

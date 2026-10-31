@@ -120,8 +120,16 @@ export function parseLeagueIdInput(rawInput: string): string {
   return trimmed.replace(/[^A-Za-z0-9_-]/g, '');
 }
 
+export interface StatusRouteParams {
+  isStatusRoute: boolean;
+  leagueId: string | null;
+  week: number | null;
+  format: 'html' | 'json' | 'md';
+}
+
 /**
- * Extracts the current leagueId from window.location (supports /:leagueId, /league/:leagueId, or ?league=...).
+ * Extracts the current leagueId from window.location (supports /:leagueId, /league/:leagueId,
+ * /status/:leagueId, /:leagueId/status, or ?league=...).
  */
 export function getLeagueIdFromLocation(loc: { pathname: string; search: string }): string | null {
   const params = new URLSearchParams(loc.search);
@@ -136,10 +144,59 @@ export function getLeagueIdFromLocation(loc: { pathname: string; search: string 
     .filter(Boolean);
 
   if (segments.length === 0) return null;
-  if (segments[0].toLowerCase() === 'league' || segments[0].toLowerCase() === 'leagues') {
-    return segments[1] ? parseLeagueIdInput(segments[1]) : null;
+  const first = segments[0].toLowerCase();
+  if (first === 'league' || first === 'leagues' || first === 'status') {
+    if (!segments[1] || segments[1].toLowerCase() === 'status') return null;
+    return parseLeagueIdInput(segments[1]);
   }
   return parseLeagueIdInput(segments[0]);
+}
+
+/**
+ * Detects whether the current location is the read-only agent status page
+ * (/status/:leagueId, /:leagueId/status, /league/:leagueId/status) and parses query options.
+ */
+export function parseStatusRouteFromLocation(loc: { pathname: string; search: string }): StatusRouteParams {
+  const segments = loc.pathname
+    .split('/')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const first = segments[0]?.toLowerCase() || '';
+  const second = segments[1]?.toLowerCase() || '';
+  const third = segments[2]?.toLowerCase() || '';
+
+  const isStatusPath =
+    (first === 'status' && segments.length >= 2) ||
+    (segments.length >= 2 && second === 'status' && first !== 'league' && first !== 'leagues') ||
+    ((first === 'league' || first === 'leagues') && third === 'status' && segments.length >= 3);
+
+  const leagueId = getLeagueIdFromLocation(loc);
+  const params = new URLSearchParams(loc.search);
+
+  let week: number | null = null;
+  const rawWeek = params.get('week');
+  if (rawWeek) {
+    const parsedWeek = parseInt(rawWeek, 10);
+    if (!isNaN(parsedWeek) && parsedWeek >= 1) {
+      week = parsedWeek;
+    }
+  }
+
+  const rawFormat = (params.get('format') || '').trim().toLowerCase();
+  const format: 'html' | 'json' | 'md' =
+    rawFormat === 'json'
+      ? 'json'
+      : rawFormat === 'md' || rawFormat === 'markdown' || rawFormat === 'text'
+      ? 'md'
+      : 'html';
+
+  return {
+    isStatusRoute: isStatusPath && Boolean(leagueId),
+    leagueId,
+    week,
+    format,
+  };
 }
 
 export function getRecentLeagues(): RecentLeague[] {

@@ -31,10 +31,15 @@ import {
   saveCachedTeamId,
   getCachedTeamId,
   getLeagueIdFromLocation,
+  parseStatusRouteFromLocation,
   getRecentLeagues,
   saveRecentLeague,
   RecentLeague,
 } from './services/auth';
+import {
+  LeagueStatusPage,
+  buildSanitizedStatusPayload,
+} from './components/LeagueStatusPage';
 import { db, functions } from './services/firebase';
 import { calculateParlayStats, OddsFormat } from './utils/parlayMath';
 
@@ -489,6 +494,10 @@ export const App: React.FC = () => {
   const [leagueId, setLeagueId] = useState<string | null>(() =>
     typeof window !== 'undefined' ? getLeagueIdFromLocation(window.location) : null
   );
+  const statusRoute =
+    typeof window !== 'undefined'
+      ? parseStatusRouteFromLocation(window.location)
+      : { isStatusRoute: false, leagueId: null, week: null, format: 'html' as const };
   const [leagueName, setLeagueName] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const initialId = getLeagueIdFromLocation(window.location);
@@ -763,15 +772,15 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!leagueId) return;
+    if (!leagueId || statusRoute.isStatusRoute) return;
     refreshKalshiBoardIfNeeded(false);
-  }, [leagueId]);
+  }, [leagueId, statusRoute.isStatusRoute]);
 
   useEffect(() => {
-    if (isPickOpen) {
+    if (isPickOpen && !statusRoute.isStatusRoute) {
       refreshKalshiBoardIfNeeded(false);
     }
-  }, [isPickOpen]);
+  }, [isPickOpen, statusRoute.isStatusRoute]);
 
   // Listen to browser back/forward navigation
   useEffect(() => {
@@ -916,6 +925,10 @@ export const App: React.FC = () => {
     setPastParlays([]);
 
     const syncRealSleeperLeague = async (forceSync = false) => {
+      if (statusRoute.isStatusRoute) {
+        setIsLoadingLeague(false);
+        return;
+      }
       try {
         const [leagueRes, rostersRes, usersRes, stateRes] = await Promise.all([
           fetch(`https://api.sleeper.app/v1/league/${leagueId}`),
@@ -1076,7 +1089,7 @@ export const App: React.FC = () => {
     let isSubscribed = true;
 
     // Check live NFL week directly from Sleeper so transitions to a new week are caught immediately
-    if (!isDemo) {
+    if (!isDemo && !statusRoute.isStatusRoute) {
       fetch('https://api.sleeper.app/v1/state/nfl')
         .then((res) => (res.ok ? res.json() : null))
         .then((nflState) => {
@@ -1110,7 +1123,7 @@ export const App: React.FC = () => {
           currentStoredWeekRef.current = storedWeek;
 
           const liveWeek = liveNflWeekRef.current;
-          if (!isDemo && liveWeek && storedWeek > 0 && storedWeek < liveWeek) {
+          if (!isDemo && !statusRoute.isStatusRoute && liveWeek && storedWeek > 0 && storedWeek < liveWeek) {
             const weekSyncKey = `${leagueId}_week_${liveWeek}_${authKey}`;
             if (syncedLeagueRef.current !== weekSyncKey) {
               syncedLeagueRef.current = weekSyncKey;
@@ -1119,7 +1132,7 @@ export const App: React.FC = () => {
             }
           }
 
-          if (!isDemo && data?.source !== 'sleeper') {
+          if (!isDemo && !statusRoute.isStatusRoute && data?.source !== 'sleeper') {
             const forceKey = `${leagueId}_force_${authKey}`;
             if (syncedLeagueRef.current !== forceKey) {
               syncedLeagueRef.current = forceKey;
@@ -1135,18 +1148,26 @@ export const App: React.FC = () => {
           saveRecentLeague(leagueId, name);
           setRecentLeagues(getRecentLeagues());
         } else if (!isDemo) {
-          const leagueKey = `${leagueId}_${authKey}`;
-          if (syncedLeagueRef.current !== leagueKey) {
-            syncedLeagueRef.current = leagueKey;
-            syncRealSleeperLeague(false);
+          if (statusRoute.isStatusRoute) {
+            setIsLoadingLeague(false);
+          } else {
+            const leagueKey = `${leagueId}_${authKey}`;
+            if (syncedLeagueRef.current !== leagueKey) {
+              syncedLeagueRef.current = leagueKey;
+              syncRealSleeperLeague(false);
+            }
           }
         }
       },
       () => {
-        const leagueKey = `${leagueId}_${authKey}`;
-        if (!isDemo && syncedLeagueRef.current !== leagueKey) {
-          syncedLeagueRef.current = leagueKey;
-          syncRealSleeperLeague(false);
+        if (statusRoute.isStatusRoute) {
+          setIsLoadingLeague(false);
+        } else {
+          const leagueKey = `${leagueId}_${authKey}`;
+          if (!isDemo && syncedLeagueRef.current !== leagueKey) {
+            syncedLeagueRef.current = leagueKey;
+            syncRealSleeperLeague(false);
+          }
         }
       }
     );
@@ -1207,7 +1228,7 @@ export const App: React.FC = () => {
 
         const liveWeek = liveNflWeekRef.current;
         const highestParlayWeek = allParlays[0]?.week || 0;
-        if (!isDemo && liveWeek && highestParlayWeek > 0 && highestParlayWeek < liveWeek) {
+        if (!isDemo && !statusRoute.isStatusRoute && liveWeek && highestParlayWeek > 0 && highestParlayWeek < liveWeek) {
           const weekSyncKey = `${leagueId}_week_${liveWeek}_${authKey}`;
           if (syncedLeagueRef.current !== weekSyncKey) {
             syncedLeagueRef.current = weekSyncKey;
@@ -1241,7 +1262,7 @@ export const App: React.FC = () => {
       unsubTeams();
       unsubParlays();
     };
-  }, [leagueId, season, user?.uid]);
+  }, [leagueId, season, user?.uid, statusRoute.isStatusRoute]);
 
   // Render Landing Page if no leagueId in URL
   if (!leagueId) {
@@ -1307,6 +1328,31 @@ export const App: React.FC = () => {
       }
     }
   };
+
+  if (statusRoute.isStatusRoute) {
+    const allAvailableParlays = [parlay, ...pastParlays];
+    const targetParlay =
+      statusRoute.week !== null
+        ? allAvailableParlays.find((p) => p.week === statusRoute.week) || parlay
+        : parlay;
+
+    const payload = buildSanitizedStatusPayload({
+      leagueId,
+      leagueName,
+      season,
+      currentWeek: parlay.week,
+      teams,
+      parlay: targetParlay,
+    });
+
+    return (
+      <LeagueStatusPage
+        payload={payload}
+        initialFormat={statusRoute.format}
+        onOpenInteractive={() => navigateToLeague(leagueId)}
+      />
+    );
+  }
 
   return (
     <SignInGate user={user} loading={authLoading} leagueName={leagueName} enabled={!isDemo}>
@@ -1616,6 +1662,13 @@ export const App: React.FC = () => {
               {/* App Footer */}
               <footer className="mt-12 py-6 border-t border-sleeper-border/40 text-center text-xs text-sleeper-muted space-y-2">
                 <div className="flex items-center justify-center space-x-3 text-xs">
+                  <a
+                    href={`/status/${leagueId}`}
+                    className="text-gray-400 hover:text-sleeper-accent hover:underline transition font-medium"
+                  >
+                    Status Page
+                  </a>
+                  <span>•</span>
                   <button
                     type="button"
                     onClick={() => setIsPrivacyOpen(true)}

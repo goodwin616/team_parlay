@@ -5,6 +5,7 @@ import {
   clearCachedTeamId,
   parseLeagueIdInput,
   getLeagueIdFromLocation,
+  parseStatusRouteFromLocation,
   getRecentLeagues,
   saveRecentLeague,
 } from '../services/auth';
@@ -91,6 +92,34 @@ describe('Auth & Multi-League URL Service', () => {
       expect(getLeagueIdFromLocation({ pathname: '/1312915483992809472', search: '' })).toBe('1312915483992809472');
       expect(getLeagueIdFromLocation({ pathname: '/league/1312915483992809472', search: '' })).toBe('1312915483992809472');
       expect(getLeagueIdFromLocation({ pathname: '/', search: '?league=demo' })).toBe('demo');
+    });
+
+    it('extracts leagueId cleanly from /status/:leagueId and /:leagueId/status paths', () => {
+      expect(getLeagueIdFromLocation({ pathname: '/status/1312915483992809472', search: '' })).toBe('1312915483992809472');
+      expect(getLeagueIdFromLocation({ pathname: '/1312915483992809472/status', search: '' })).toBe('1312915483992809472');
+      expect(getLeagueIdFromLocation({ pathname: '/league/1312915483992809472/status', search: '' })).toBe('1312915483992809472');
+      expect(getLeagueIdFromLocation({ pathname: '/status', search: '' })).toBeNull();
+    });
+
+    it('detects status routes and parses week and format query params via parseStatusRouteFromLocation', () => {
+      expect(parseStatusRouteFromLocation({ pathname: '/1312915483992809472', search: '' })).toEqual({
+        isStatusRoute: false,
+        leagueId: '1312915483992809472',
+        week: null,
+        format: 'html',
+      });
+      expect(parseStatusRouteFromLocation({ pathname: '/status/demo', search: '?week=3&format=json' })).toEqual({
+        isStatusRoute: true,
+        leagueId: 'demo',
+        week: 3,
+        format: 'json',
+      });
+      expect(parseStatusRouteFromLocation({ pathname: '/1312915483992809472/status', search: '?format=md' })).toEqual({
+        isStatusRoute: true,
+        leagueId: '1312915483992809472',
+        week: null,
+        format: 'md',
+      });
     });
   });
 
