@@ -5,8 +5,8 @@ import { getAuth, connectAuthEmulator } from 'firebase/auth';
 
 const firebaseConfig = {
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'goodwin-team-parlay',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:411391028164:web:c7d2e54d11d47aaf691291',
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDCOY1oYm11XDD1AXodMIJYMhUPVq93ZeY',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || 'mock-app-id',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'mock-api-key',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'goodwin-team-parlay.firebaseapp.com',
 };
 
