@@ -436,5 +436,42 @@ describe('ParlayCard Component', () => {
       const mutedMatches = html.match(/text-gray-500 font-mono font-bold/g);
       expect(mutedMatches).toBeNull();
     });
+
+    it('hides the Same-Game Combo alert when isOfficialQuote is true even if contains_sgp is true', () => {
+      const estimateSgpParlay: WeeklyParlay = {
+        ...activeParlay,
+        contains_sgp: true,
+        actual_odds_american: null,
+        actual_payout: null,
+      };
+      const officialSgpParlay: WeeklyParlay = {
+        ...activeParlay,
+        contains_sgp: true,
+        actual_odds_american: '+450',
+        actual_payout: 27.5,
+      };
+
+      const estimateHtml = cleanText(
+        renderToString(
+          <ParlayCard
+            parlay={estimateSgpParlay}
+            currentRosterId={1}
+            onOpenPickModal={() => {}}
+          />
+        )
+      );
+      expect(estimateHtml).toContain('Same-Game Combo Detected');
+
+      const officialHtml = cleanText(
+        renderToString(
+          <ParlayCard
+            parlay={officialSgpParlay}
+            currentRosterId={1}
+            onOpenPickModal={() => {}}
+          />
+        )
+      );
+      expect(officialHtml).not.toContain('Same-Game Combo Detected');
+    });
   });
 });

@@ -306,7 +306,7 @@ export const ParlayCard: React.FC<Props> = ({
       )}
 
       {/* Same-Game Combo Alert Badge */}
-      {parlay.contains_sgp && (
+      {!isOfficialQuote && parlay.contains_sgp && (
         <div className="px-4 py-2.5 bg-amber-950/40 border-b border-amber-900/50 flex items-start space-x-2.5 text-xs text-amber-200">
           <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div className="leading-snug">
