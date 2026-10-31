@@ -22,5 +22,6 @@ pubsub-debug.log
 functions/.env
 frontend/.env
 functions/secrets/
+.ci_targets
 .DS_Store
 *.DS_Store
