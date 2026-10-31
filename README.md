@@ -256,12 +256,64 @@ functions/venv/bin/pytest functions/tests
 
 ## Deployment
 
-### 1. Deploy Firestore Security Rules
+### Automated Deployment via Google Cloud Build (Recommended)
+
+This repository includes a change-based **Google Cloud Build** pipeline ([`cloudbuild.yaml`](cloudbuild.yaml)) that deploys automatically whenever changes are pushed or merged to `main`:
+- **Change-Aware**: Inspects modified files and selectively builds/deploys only modified components (`hosting`, `functions`, or `firestore:rules`).
+- **GCP-Native & Keyless**: Runs directly inside your `goodwin-team-parlay` GCP project with zero exported service account JSON keys.
+- **Automated Verification**: Automatically runs `vitest` + `tsc` on frontend changes and `pytest` on Cloud Functions changes prior to deployment.
+
+#### 1. Grant IAM Roles to Cloud Build Service Account
+In your terminal with `gcloud` authenticated to `goodwin-team-parlay`:
+
+```bash
+PROJECT_ID="goodwin-team-parlay"
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+CB_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+
+# Grant Firebase & Cloud Run deployment permissions
+for ROLE in \
+  roles/firebase.admin \
+  roles/cloudfunctions.admin \
+  roles/run.admin \
+  roles/iam.serviceAccountUser \
+  roles/secretmanager.secretAccessor; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:$CB_SA" \
+    --role="$ROLE"
+done
+```
+
+#### 2. Create the Cloud Build GitHub Trigger
+Connect your repository in [GCP Console → Cloud Build → Triggers](https://console.cloud.google.com/cloud-build/triggers), or create the trigger with substitution variables:
+
+```bash
+gcloud builds triggers create github \
+  --project="goodwin-team-parlay" \
+  --name="deploy-main-to-firebase" \
+  --repo-name="team_parlay" \
+  --repo-owner="goodwin616" \
+  --branch-pattern="^main$" \
+  --build-config="cloudbuild.yaml" \
+  --substitutions=\
+_VITE_FIREBASE_API_KEY="YOUR_FIREBASE_WEB_API_KEY",\
+_VITE_FIREBASE_AUTH_DOMAIN="goodwin-team-parlay.firebaseapp.com",\
+_VITE_FIREBASE_STORAGE_BUCKET="goodwin-team-parlay.firebasestorage.app",\
+_VITE_FIREBASE_MESSAGING_SENDER_ID="YOUR_SENDER_ID",\
+_VITE_FIREBASE_APP_ID="YOUR_APP_ID",\
+_MAX_LEG_ODDS_PERCENT="55"
+```
+
+---
+
+### Manual CLI Deployment
+
+#### 1. Deploy Firestore Security Rules
 ```bash
 firebase deploy --only firestore:rules
 ```
 
-### 2. Configure Cloud Secrets
+#### 2. Configure Cloud Secrets
 Inject sensitive keys securely into Google Cloud Secret Manager:
 
 ```bash
@@ -269,12 +321,12 @@ firebase functions:secrets:set KALSHI_API_KEY_ID
 firebase functions:secrets:set KALSHI_PRIVATE_KEY_PEM
 ```
 
-### 3. Deploy Cloud Functions
+#### 3. Deploy Cloud Functions
 ```bash
 firebase deploy --only functions
 ```
 
-### 4. Deploy Frontend to Firebase Hosting
+#### 4. Deploy Frontend to Firebase Hosting
 ```bash
 cd frontend
 npm run build

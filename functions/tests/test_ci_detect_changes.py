@@ -120,3 +120,31 @@ def test_require_vite_env_allows_functions_only_without_api_key(tmp_path):
     )
     assert proc.returncode == 0
     assert targets["DEPLOY_TARGETS"] == "functions"
+
+import json
+
+
+def test_firebaserc_points_to_goodwin_team_parlay():
+    firebaserc = json.loads((REPO_ROOT / ".firebaserc").read_text())
+    assert firebaserc == {"projects": {"default": "goodwin-team-parlay"}}
+
+
+def test_cloudbuild_yaml_defines_expected_steps_and_substitutions():
+    content = (REPO_ROOT / "cloudbuild.yaml").read_text()
+    for step_id in [
+        "id: 'detect-changes'",
+        "id: 'test-and-build-frontend'",
+        "id: 'test-and-prep-functions'",
+        "id: 'deploy-hosting-and-rules'",
+        "id: 'deploy-functions'",
+    ]:
+        assert step_id in content
+    for sub in [
+        "_VITE_FIREBASE_API_KEY",
+        "_VITE_FIREBASE_AUTH_DOMAIN",
+        "_VITE_FIREBASE_STORAGE_BUCKET",
+        "_VITE_FIREBASE_MESSAGING_SENDER_ID",
+        "_VITE_FIREBASE_APP_ID",
+        "_MAX_LEG_ODDS_PERCENT",
+    ]:
+        assert sub in content
