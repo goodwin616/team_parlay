@@ -106,18 +106,26 @@ export function clearCachedTeamId(leagueId: string, uid?: string): void {
   }
 }
 
+const RESERVED_ROUTE_SEGMENTS = new Set(['status', 'league', 'leagues']);
+
 /**
- * Extracts a Sleeper League ID from either a raw ID string or a full Sleeper URL
+ * Extracts a Sleeper League ID from either a raw ID string or a full Sleeper / Team Parlay URL
  * (e.g. "https://sleeper.com/leagues/1312915483992809472/matchup" -> "1312915483992809472").
  */
 export function parseLeagueIdInput(rawInput: string): string {
   const trimmed = rawInput.trim();
   if (!trimmed) return '';
-  const urlMatch = trimmed.match(/leagues\/([A-Za-z0-9_-]+)/i);
-  if (urlMatch && urlMatch[1]) {
+  const urlMatch =
+    trimmed.match(/(?:leagues?|status)\/([A-Za-z0-9_-]+)/i) ||
+    trimmed.match(/\/([A-Za-z0-9_-]+)\/status/i);
+  if (urlMatch && urlMatch[1] && !RESERVED_ROUTE_SEGMENTS.has(urlMatch[1].toLowerCase())) {
     return urlMatch[1];
   }
-  return trimmed.replace(/[^A-Za-z0-9_-]/g, '');
+  const cleaned = trimmed.replace(/[^A-Za-z0-9_-]/g, '');
+  if (RESERVED_ROUTE_SEGMENTS.has(cleaned.toLowerCase())) {
+    return '';
+  }
+  return cleaned;
 }
 
 export interface StatusRouteParams {
@@ -135,7 +143,8 @@ export function getLeagueIdFromLocation(loc: { pathname: string; search: string 
   const params = new URLSearchParams(loc.search);
   const fromQuery = params.get('league') || params.get('leagueId');
   if (fromQuery && fromQuery.trim()) {
-    return parseLeagueIdInput(fromQuery);
+    const parsedQuery = parseLeagueIdInput(fromQuery);
+    return parsedQuery || null;
   }
 
   const segments = loc.pathname
@@ -144,12 +153,13 @@ export function getLeagueIdFromLocation(loc: { pathname: string; search: string 
     .filter(Boolean);
 
   if (segments.length === 0) return null;
-  const first = segments[0].toLowerCase();
-  if (first === 'league' || first === 'leagues' || first === 'status') {
-    if (!segments[1] || segments[1].toLowerCase() === 'status') return null;
-    return parseLeagueIdInput(segments[1]);
+  for (const seg of segments) {
+    if (!RESERVED_ROUTE_SEGMENTS.has(seg.toLowerCase())) {
+      const parsedSeg = parseLeagueIdInput(seg);
+      if (parsedSeg) return parsedSeg;
+    }
   }
-  return parseLeagueIdInput(segments[0]);
+  return null;
 }
 
 /**
@@ -162,15 +172,7 @@ export function parseStatusRouteFromLocation(loc: { pathname: string; search: st
     .map(s => s.trim())
     .filter(Boolean);
 
-  const first = segments[0]?.toLowerCase() || '';
-  const second = segments[1]?.toLowerCase() || '';
-  const third = segments[2]?.toLowerCase() || '';
-
-  const isStatusPath =
-    (first === 'status' && segments.length >= 2) ||
-    (segments.length >= 2 && second === 'status' && first !== 'league' && first !== 'leagues') ||
-    ((first === 'league' || first === 'leagues') && third === 'status' && segments.length >= 3);
-
+  const hasStatusSegment = segments.some(s => s.toLowerCase() === 'status');
   const leagueId = getLeagueIdFromLocation(loc);
   const params = new URLSearchParams(loc.search);
 
@@ -192,7 +194,7 @@ export function parseStatusRouteFromLocation(loc: { pathname: string; search: st
       : 'html';
 
   return {
-    isStatusRoute: isStatusPath && Boolean(leagueId),
+    isStatusRoute: hasStatusSegment && Boolean(leagueId),
     leagueId,
     week,
     format,
@@ -205,19 +207,19 @@ export function getRecentLeagues(): RecentLeague[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (league: RecentLeague) =>
-        league &&
-        typeof league.leagueId === 'string' &&
-        league.leagueId.trim().toLowerCase() !== 'demo'
-    );
+    return parsed.filter((league: RecentLeague) => {
+      if (!league || typeof league.leagueId !== 'string') return false;
+      const normalized = league.leagueId.trim().toLowerCase();
+      return normalized !== '' && normalized !== 'demo' && !RESERVED_ROUTE_SEGMENTS.has(normalized);
+    });
   } catch {
     return [];
   }
 }
 
 export function saveRecentLeague(leagueId: string, name?: string): void {
-  if (!leagueId || leagueId.trim().toLowerCase() === 'demo') return;
+  const normalized = (leagueId || '').trim().toLowerCase();
+  if (!normalized || normalized === 'demo' || RESERVED_ROUTE_SEGMENTS.has(normalized)) return;
   const existing = getRecentLeagues();
   const prev = existing.find(l => l.leagueId === leagueId);
   const entry: RecentLeague = {

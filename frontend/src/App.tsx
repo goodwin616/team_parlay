@@ -837,7 +837,7 @@ export const App: React.FC = () => {
 
   // Retrieve user's saved team on sign-in / league change
   useEffect(() => {
-    if (!leagueId) {
+    if (!leagueId || statusRoute.isStatusRoute) {
       setCurrentRosterId(null);
       currentRosterIdRef.current = null;
       return;
@@ -925,10 +925,6 @@ export const App: React.FC = () => {
     setPastParlays([]);
 
     const syncRealSleeperLeague = async (forceSync = false) => {
-      if (statusRoute.isStatusRoute) {
-        setIsLoadingLeague(false);
-        return;
-      }
       try {
         const [leagueRes, rostersRes, usersRes, stateRes] = await Promise.all([
           fetch(`https://api.sleeper.app/v1/league/${leagueId}`),
@@ -1062,23 +1058,25 @@ export const App: React.FC = () => {
         setIsLoadingLeague(false);
 
         // Persist to Firestore via Cloud Function
-        try {
-          const initFn = httpsCallable(functions, 'init_or_sync_league');
-          await initFn({
-            league_id: leagueId,
-            season: resolvedSeason,
-            force_sync: forceSync,
-            sleeper_payload: {
-              league_info: leagueInfo,
+        if (!statusRoute.isStatusRoute) {
+          try {
+            const initFn = httpsCallable(functions, 'init_or_sync_league');
+            await initFn({
+              league_id: leagueId,
               season: resolvedSeason,
-              current_week: currentWeek,
-              rosters,
-              users,
-              matchups,
-            },
-          });
-        } catch {
-          // Functions emulator offline
+              force_sync: forceSync,
+              sleeper_payload: {
+                league_info: leagueInfo,
+                season: resolvedSeason,
+                current_week: currentWeek,
+                rosters,
+                users,
+                matchups,
+              },
+            });
+          } catch {
+            // Functions emulator offline
+          }
         }
       } catch (err: any) {
         setLeagueError(err?.message || `Could not load Sleeper league ${leagueId}`);
@@ -1148,26 +1146,18 @@ export const App: React.FC = () => {
           saveRecentLeague(leagueId, name);
           setRecentLeagues(getRecentLeagues());
         } else if (!isDemo) {
-          if (statusRoute.isStatusRoute) {
-            setIsLoadingLeague(false);
-          } else {
-            const leagueKey = `${leagueId}_${authKey}`;
-            if (syncedLeagueRef.current !== leagueKey) {
-              syncedLeagueRef.current = leagueKey;
-              syncRealSleeperLeague(false);
-            }
+          const leagueKey = `${leagueId}_${authKey}`;
+          if (syncedLeagueRef.current !== leagueKey) {
+            syncedLeagueRef.current = leagueKey;
+            syncRealSleeperLeague(false);
           }
         }
       },
       () => {
-        if (statusRoute.isStatusRoute) {
-          setIsLoadingLeague(false);
-        } else {
-          const leagueKey = `${leagueId}_${authKey}`;
-          if (!isDemo && syncedLeagueRef.current !== leagueKey) {
-            syncedLeagueRef.current = leagueKey;
-            syncRealSleeperLeague(false);
-          }
+        const leagueKey = `${leagueId}_${authKey}`;
+        if (!isDemo && syncedLeagueRef.current !== leagueKey) {
+          syncedLeagueRef.current = leagueKey;
+          syncRealSleeperLeague(false);
         }
       }
     );
