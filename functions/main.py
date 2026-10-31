@@ -721,7 +721,7 @@ def get_kalshi_nfl_markets(req: https_fn.CallableRequest) -> Dict[str, Any]:
     }
 
 
-@https_fn.on_request()
+@https_fn.on_request(invoker="public")
 def league_status(req: https_fn.Request) -> https_fn.Response:
     """
     Public, read-only HTTP endpoint for AI agents (e.g. Instinct.ai) and humans
