@@ -277,7 +277,7 @@ for ROLE in \
   roles/cloudfunctions.admin \
   roles/run.admin \
   roles/iam.serviceAccountUser \
-  roles/secretmanager.secretAccessor; do
+  roles/secretmanager.admin; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:$CB_SA" \
     --role="$ROLE"

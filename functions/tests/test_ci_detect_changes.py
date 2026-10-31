@@ -148,3 +148,62 @@ def test_cloudbuild_yaml_defines_expected_steps_and_substitutions():
         "_MAX_LEG_ODDS_PERCENT",
     ]:
         assert sub in content
+
+import shutil
+import re
+
+
+def test_cloudbuild_yaml_escapes_runtime_bash_variables():
+    content = (REPO_ROOT / "cloudbuild.yaml").read_text()
+    # Ensure escaped bash variables are used
+    for escaped_var in [
+        '$$DEPLOY_HOSTING',
+        '$$DEPLOY_FUNCTIONS',
+        '$$DEPLOY_RULES',
+        '$$TARGETS_CSV',
+        '$${#TARGETS[@]}',
+        '$${TARGETS[*]}',
+    ]:
+        assert escaped_var in content, f"Expected {escaped_var} to be in cloudbuild.yaml"
+
+    # Ensure unescaped bash variables do NOT appear in inline bash args
+    # (Matches single $ not preceded by $ and followed by DEPLOY_ or TARGETS)
+    bad_matches = re.findall(r'(?<!\$)\$(DEPLOY_[A-Z]+|TARGETS_CSV|\{#TARGETS\[@\]\}|\{TARGETS\[\*\]\})', content)
+    assert bad_matches == [], f"Found unescaped runtime bash variables in cloudbuild.yaml: {bad_matches}"
+
+
+def test_shallow_clone_fallback_when_git_diff_fails(tmp_path):
+    # Initialize a temporary git repository with only 1 commit so HEAD~1 does not exist
+    git_dir = tmp_path / "shallow_repo"
+    git_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=str(git_dir), check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "ci@test.local"], cwd=str(git_dir), check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "CI Test"], cwd=str(git_dir), check=True, capture_output=True)
+    (git_dir / "init.txt").write_text("initial commit")
+    subprocess.run(["git", "add", "init.txt"], cwd=str(git_dir), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=str(git_dir), check=True, capture_output=True)
+
+    out_file = tmp_path / ".ci_targets"
+    proc = subprocess.run(
+        ["bash", str(SCRIPT_PATH)],
+        cwd=str(git_dir),
+        env={
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin",
+            "CI_TARGETS_FILE": str(out_file),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0
+    assert "Unable to inspect git diff" in proc.stderr
+    parsed = {}
+    for line in out_file.read_text().splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            parsed[k.strip()] = v.strip()
+    assert parsed == {
+        "DEPLOY_HOSTING": "true",
+        "DEPLOY_FUNCTIONS": "true",
+        "DEPLOY_RULES": "true",
+        "DEPLOY_TARGETS": "hosting,functions,firestore:rules",
+    }

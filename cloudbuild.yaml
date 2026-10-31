@@ -30,7 +30,7 @@ steps:
       - |
         set -euo pipefail
         source .ci_targets
-        if [ "$DEPLOY_HOSTING" != "true" ]; then
+        if [ "$$DEPLOY_HOSTING" != "true" ]; then
           echo "No frontend changes detected. Skipping frontend build & tests."
           exit 0
         fi
@@ -60,7 +60,7 @@ steps:
       - |
         set -euo pipefail
         source .ci_targets
-        if [ "$DEPLOY_FUNCTIONS" != "true" ]; then
+        if [ "$$DEPLOY_FUNCTIONS" != "true" ]; then
           echo "No functions changes detected. Skipping backend test & prep."
           exit 0
         fi
@@ -87,17 +87,17 @@ steps:
         source .ci_targets
 
         TARGETS=()
-        [ "$DEPLOY_HOSTING" = "true" ] && TARGETS+=("hosting")
-        [ "$DEPLOY_RULES" = "true" ] && TARGETS+=("firestore:rules")
+        [ "$$DEPLOY_HOSTING" = "true" ] && TARGETS+=("hosting")
+        [ "$$DEPLOY_RULES" = "true" ] && TARGETS+=("firestore:rules")
 
-        if [ ${#TARGETS[@]} -eq 0 ]; then
+        if [ $${#TARGETS[@]} -eq 0 ]; then
           echo "Neither hosting nor firestore rules changed. Skipping step."
           exit 0
         fi
 
-        TARGETS_CSV="$(IFS=,; echo "${TARGETS[*]}")"
-        echo "Deploying to Firebase: $TARGETS_CSV"
-        npx -y firebase-tools@latest deploy --only "$TARGETS_CSV" --project "$PROJECT_ID" --non-interactive
+        TARGETS_CSV="$$(IFS=,; echo "$${TARGETS[*]}")"
+        echo "Deploying to Firebase: $$TARGETS_CSV"
+        npx -y firebase-tools@latest deploy --only "$$TARGETS_CSV" --project "$PROJECT_ID" --non-interactive
 
   # ----------------------------------------------------------------------------
   # 5. Deploy Cloud Functions (runs only when DEPLOY_FUNCTIONS=true)
@@ -110,7 +110,7 @@ steps:
       - |
         set -euo pipefail
         source .ci_targets
-        if [ "$DEPLOY_FUNCTIONS" != "true" ]; then
+        if [ "$$DEPLOY_FUNCTIONS" != "true" ]; then
           echo "Functions unchanged. Skipping functions deployment."
           exit 0
         fi
