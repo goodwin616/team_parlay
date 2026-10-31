@@ -1,0 +1,136 @@
+# ==============================================================================
+# Google Cloud Build Pipeline: Change-Based Firebase Deployment
+# Project: goodwin-team-parlay
+# Triggers: Push to main branch in GitHub
+# ==============================================================================
+
+steps:
+  # ----------------------------------------------------------------------------
+  # 1. Detect which components changed between HEAD~1 and HEAD
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/git'
+    id: 'detect-changes'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        git fetch --depth=2 origin main 2>/dev/null || true
+        chmod +x scripts/ci_detect_changes.sh
+        REQUIRE_VITE_ENV=1 VITE_FIREBASE_API_KEY="${_VITE_FIREBASE_API_KEY}" ./scripts/ci_detect_changes.sh
+
+  # ----------------------------------------------------------------------------
+  # 2. Frontend Test & Build (runs only when DEPLOY_HOSTING=true)
+  # ----------------------------------------------------------------------------
+  - name: 'node:20'
+    id: 'test-and-build-frontend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        source .ci_targets
+        if [ "$$DEPLOY_HOSTING" != "true" ]; then
+          echo "No frontend changes detected. Skipping frontend build & tests."
+          exit 0
+        fi
+
+        echo "Building frontend with production Firebase configuration..."
+        cd frontend
+        npm ci
+        npm test -- --run
+        npx tsc --noEmit
+        npm run build
+    env:
+      - 'VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY}'
+      - 'VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN}'
+      - 'VITE_FIREBASE_PROJECT_ID=$PROJECT_ID'
+      - 'VITE_FIREBASE_STORAGE_BUCKET=${_VITE_FIREBASE_STORAGE_BUCKET}'
+      - 'VITE_FIREBASE_MESSAGING_SENDER_ID=${_VITE_FIREBASE_MESSAGING_SENDER_ID}'
+      - 'VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID}'
+
+  # ----------------------------------------------------------------------------
+  # 3. Python Functions Test & Env Setup (runs only when DEPLOY_FUNCTIONS=true)
+  # ----------------------------------------------------------------------------
+  - name: 'python:3.14-slim'
+    id: 'test-and-prep-functions'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        source .ci_targets
+        if [ "$$DEPLOY_FUNCTIONS" != "true" ]; then
+          echo "No functions changes detected. Skipping backend test & prep."
+          exit 0
+        fi
+
+        echo "Preparing Python 3.14 virtualenv and executing backend tests..."
+        python3 -m venv functions/venv
+        functions/venv/bin/pip install --upgrade pip
+        functions/venv/bin/pip install -r functions/requirements.txt -r functions/dev-requirements.txt
+        functions/venv/bin/pytest functions/tests
+
+        echo "Writing functions/.env for deployment..."
+        echo "MAX_LEG_ODDS_PERCENT=${_MAX_LEG_ODDS_PERCENT}" > functions/.env
+
+  # ----------------------------------------------------------------------------
+  # 4. Deploy Hosting and/or Firestore Rules (runs if hosting or rules changed)
+  # ----------------------------------------------------------------------------
+  - name: 'node:20'
+    id: 'deploy-hosting-and-rules'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        source .ci_targets
+
+        TARGETS=()
+        [ "$$DEPLOY_HOSTING" = "true" ] && TARGETS+=("hosting")
+        [ "$$DEPLOY_RULES" = "true" ] && TARGETS+=("firestore:rules")
+
+        if [ $${#TARGETS[@]} -eq 0 ]; then
+          echo "Neither hosting nor firestore rules changed. Skipping step."
+          exit 0
+        fi
+
+        TARGETS_CSV="$$(IFS=,; echo "$${TARGETS[*]}")"
+        echo "Deploying to Firebase: $$TARGETS_CSV"
+        npx -y firebase-tools@latest deploy --only "$$TARGETS_CSV" --project "$PROJECT_ID" --non-interactive
+
+  # ----------------------------------------------------------------------------
+  # 5. Deploy Cloud Functions (runs only when DEPLOY_FUNCTIONS=true)
+  # ----------------------------------------------------------------------------
+  - name: 'python:3.14-slim'
+    id: 'deploy-functions'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        source .ci_targets
+        if [ "$$DEPLOY_FUNCTIONS" != "true" ]; then
+          echo "Functions unchanged. Skipping functions deployment."
+          exit 0
+        fi
+
+        echo "Installing Node.js & firebase-tools for Python functions deployment..."
+        apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y --no-install-recommends nodejs
+        npm install -g firebase-tools@latest
+
+        echo "Deploying Cloud Functions to Firebase..."
+        firebase deploy --only functions --project "$PROJECT_ID" --non-interactive
+
+substitutions:
+  _MAX_LEG_ODDS_PERCENT: '55'
+  _VITE_FIREBASE_API_KEY: ''
+  _VITE_FIREBASE_AUTH_DOMAIN: ''
+  _VITE_FIREBASE_STORAGE_BUCKET: ''
+  _VITE_FIREBASE_MESSAGING_SENDER_ID: ''
+  _VITE_FIREBASE_APP_ID: ''
+
+options:
+  logging: CLOUD_LOGGING_ONLY
