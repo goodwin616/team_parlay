@@ -176,6 +176,10 @@ def test_cloudbuild_yaml_escapes_runtime_bash_variables():
 
 
 def test_shallow_clone_fallback_when_git_diff_fails(tmp_path):
+    if not shutil.which("git"):
+        import pytest
+        pytest.skip("git binary not installed in test environment")
+
     # Initialize a temporary git repository with only 1 commit so HEAD~1 does not exist
     git_dir = tmp_path / "shallow_repo"
     git_dir.mkdir()
