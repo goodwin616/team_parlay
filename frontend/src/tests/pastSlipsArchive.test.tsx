@@ -539,4 +539,50 @@ describe('PastSlipsArchive Component', () => {
       expect(onCloseMock).not.toHaveBeenCalled();
     });
   });
+
+  describe('Accessibility & Keyboard Navigation (F-04)', () => {
+    it('sets dialog accessibility attributes and labelledby title', () => {
+      const { element } = renderArchiveElement({
+        isOpen: true,
+        onClose: () => {},
+        pastParlays: samplePastParlays,
+      });
+
+      const modalContainer = element?.props.children;
+      expect(modalContainer.props.role).toBe('dialog');
+      expect(modalContainer.props['aria-modal']).toBe('true');
+      expect(modalContainer.props['aria-labelledby']).toBe('past-slips-title');
+
+      const html = renderToString(
+        <PastSlipsArchive isOpen={true} onClose={() => {}} pastParlays={samplePastParlays} />
+      );
+      expect(html).toContain('id="past-slips-title"');
+    });
+
+    it('supports keyboard navigation and accordion ARIA attributes on week header', () => {
+      const { element, stateSetters } = renderArchiveElement({
+        isOpen: true,
+        onClose: () => {},
+        pastParlays: samplePastParlays,
+      });
+
+      const modalContainer = element?.props.children;
+      const [_header, content, _footer] = modalContainer.props.children;
+      const firstWeekCard = content.props.children[0];
+      const accordionHeader = firstWeekCard.props.children[0];
+
+      expect(accordionHeader.props.role).toBe('button');
+      expect(accordionHeader.props.tabIndex).toBe(0);
+      expect(accordionHeader.props['aria-expanded']).toBe(true);
+
+      const preventDefault = vi.fn();
+      accordionHeader.props.onKeyDown({ key: 'Enter', preventDefault });
+      expect(preventDefault).toHaveBeenCalled();
+      expect(stateSetters[0]).toHaveBeenCalledWith(null);
+
+      const spacePreventDefault = vi.fn();
+      accordionHeader.props.onKeyDown({ key: ' ', preventDefault: spacePreventDefault });
+      expect(spacePreventDefault).toHaveBeenCalled();
+    });
+  });
 });

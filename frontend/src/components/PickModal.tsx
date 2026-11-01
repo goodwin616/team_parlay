@@ -13,6 +13,7 @@ import {
   KalshiPropContract,
   ParlayLeg,
 } from "../types";
+import { ParsedKalshiProp } from "../services/kalshi";
 import { PlayerSearchInput } from "./PlayerSearchInput";
 import { TeamLogo, getNflTeamMeta } from "../utils/nflTeams";
 import {
@@ -42,7 +43,7 @@ interface Props {
   rosterName: string;
   activePlayers: ActivePlayer[];
   kalshiGames?: GameLineOption[];
-  kalshiProps?: any[];
+  kalshiProps?: Array<ParsedKalshiProp | Record<string, any>>;
   liveMarketCount?: number;
   lastUpdated?: Date | number | string | null;
   oddsFormat?: OddsFormat;
@@ -299,7 +300,7 @@ function buildKalshiContractsForPlayer(
 function getPlayerContracts(
   selectedPlayer: ActivePlayer | null,
   statCategory: string,
-  kalshiProps: any[] = [],
+  kalshiProps: Array<ParsedKalshiProp | Record<string, any>> = [],
   maxLegOddsPercent?: number | null,
 ): KalshiPropContract[] {
   if (!selectedPlayer) return [];
@@ -359,7 +360,7 @@ function getPlayerContracts(
 function resolveInitialPlayerPropState(
   currentLeg: ParlayLeg | undefined,
   activePlayers: ActivePlayer[],
-  kalshiProps: any[] = [],
+  kalshiProps: Array<ParsedKalshiProp | Record<string, any>> = [],
   initialPlayer: ActivePlayer | null = null,
   maxLegOddsPercent?: number | null,
 ) {
@@ -530,6 +531,18 @@ export const PickModal: React.FC<Props> = ({
     return () => clearInterval(interval);
   }, [isOpen, lastUpdated]);
 
+  // Close on Escape key press
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   const isGameInitial = useMemo(() => {
     if (currentLeg?.status !== "submitted") return false;
     const ticker = currentLeg.kalshi_market_ticker || "";
@@ -566,8 +579,7 @@ export const PickModal: React.FC<Props> = ({
         initialPlayer,
         maxLegOddsPercent,
       ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [currentLeg, kalshiProps, activePlayers, initialPlayer],
   );
 
   // Player Prop State
@@ -629,12 +641,45 @@ export const PickModal: React.FC<Props> = ({
     }
   }, [gamesList, selectedGame]);
 
+  const isInitializedRef = useRef<boolean>(false);
+  const prevKalshiPropsLengthRef = useRef<number>(kalshiProps.length);
+  const prevLegIdRef = useRef<string | undefined>(currentLeg?.id);
+  const prevInitialPlayerIdRef = useRef<string | undefined>(initialPlayer?.id);
+
   // Restore existing submitted leg selection when modal opens (or reset to empty if pending)
   useEffect(() => {
     if (!isOpen) {
+      isInitializedRef.current = false;
       prevSelectionKeyRef.current = "";
+      prevKalshiPropsLengthRef.current = kalshiProps.length;
+      prevLegIdRef.current = currentLeg?.id;
+      prevInitialPlayerIdRef.current = initialPlayer?.id;
       return;
     }
+
+    const legChanged = prevLegIdRef.current !== currentLeg?.id;
+    prevLegIdRef.current = currentLeg?.id;
+
+    const initialPlayerChanged =
+      prevInitialPlayerIdRef.current !== initialPlayer?.id;
+    prevInitialPlayerIdRef.current = initialPlayer?.id;
+
+    const kalshiJustLoaded =
+      prevKalshiPropsLengthRef.current === 0 &&
+      kalshiProps.length > 0 &&
+      currentLeg?.status === "submitted";
+    prevKalshiPropsLengthRef.current = kalshiProps.length;
+
+    const shouldInitialize =
+      !isInitializedRef.current ||
+      legChanged ||
+      initialPlayerChanged ||
+      kalshiJustLoaded;
+
+    if (!shouldInitialize) {
+      return;
+    }
+    isInitializedRef.current = true;
 
     if (!currentLeg || currentLeg.status !== "submitted") {
       setTab("prop");
@@ -764,7 +809,7 @@ export const PickModal: React.FC<Props> = ({
     } else {
       setStatCategory("Touchdowns");
     }
-  }, [isOpen, currentLeg, initialPlayer]);
+  }, [isOpen, currentLeg, initialPlayer, kalshiProps, gamesList]);
 
   // Categories available for the currently selected player
   const playerCategories = useMemo(() => {
@@ -1065,7 +1110,12 @@ export const PickModal: React.FC<Props> = ({
     : "Off-Season / Sample Board";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm overflow-y-auto animate-fadeIn">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pick-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm overflow-y-auto animate-fadeIn"
+    >
       <div className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-lg sm:max-w-xl lg:max-w-2xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl my-auto">
         {/* Modal Header */}
         <div className="flex justify-between items-center px-5 py-4 border-b border-sleeper-border bg-sleeper-card shrink-0">
@@ -1090,9 +1140,12 @@ export const PickModal: React.FC<Props> = ({
                 <span>{freshnessText}</span>
               </span>
             </div>
-            <h3 className="text-base font-bold text-white flex items-center space-x-1.5">
+            <h2
+              id="pick-modal-title"
+              className="text-base font-bold text-white flex items-center space-x-1.5"
+            >
               <span>Submit Weekly Leg</span>
-            </h3>
+            </h2>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -1127,7 +1180,9 @@ export const PickModal: React.FC<Props> = ({
             )}
 
             <button
+              type="button"
               onClick={onClose}
+              aria-label="Close"
               className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition"
             >
               <X className="w-5 h-5" />
@@ -1136,9 +1191,14 @@ export const PickModal: React.FC<Props> = ({
         </div>
 
         {/* Tab Selector (Kalshi Player Props & Kalshi Game Lines only) */}
-        <div className="flex border-b border-sleeper-border bg-sleeper-dark/50 shrink-0">
+        <div
+          role="tablist"
+          className="flex border-b border-sleeper-border bg-sleeper-dark/50 shrink-0"
+        >
           <button
             type="button"
+            role="tab"
+            aria-selected={tab === "prop"}
             onClick={() => setTab("prop")}
             className={`flex-1 py-3 text-xs font-bold transition flex items-center justify-center space-x-1.5 border-b-2 ${
               tab === "prop"
@@ -1150,6 +1210,8 @@ export const PickModal: React.FC<Props> = ({
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={tab === "mainline"}
             onClick={() => setTab("mainline")}
             className={`flex-1 py-3 text-xs font-bold transition flex items-center justify-center space-x-1.5 border-b-2 ${
               tab === "mainline"

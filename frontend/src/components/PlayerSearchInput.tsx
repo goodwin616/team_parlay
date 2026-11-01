@@ -76,6 +76,11 @@ export const PlayerSearchInput: React.FC<Props> = ({
         <input
           id="nfl-player-search"
           type="text"
+          role="combobox"
+          aria-expanded={isOpen}
+          aria-autocomplete="list"
+          aria-controls="player-search-listbox"
+          aria-label="Search NFL players"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -99,7 +104,7 @@ export const PlayerSearchInput: React.FC<Props> = ({
         {query && (
           <button
             type="button"
-            aria-label="Clear search"
+            aria-label="Clear selected player"
             onClick={handleClear}
             className="absolute right-3 top-3 text-gray-400 hover:text-white transition"
           >
@@ -110,12 +115,19 @@ export const PlayerSearchInput: React.FC<Props> = ({
 
       {/* Autocomplete dropdown */}
       {isOpen && filtered.length > 0 && (
-        <ul className="absolute z-50 w-full mt-1 bg-sleeper-card border border-sleeper-border rounded-lg shadow-2xl overflow-hidden divide-y divide-sleeper-border/60 max-h-64 overflow-y-auto">
+        <ul
+          id="player-search-listbox"
+          role="listbox"
+          className="absolute z-50 w-full mt-1 bg-sleeper-card border border-sleeper-border rounded-lg shadow-2xl overflow-hidden divide-y divide-sleeper-border/60 max-h-64 overflow-y-auto"
+        >
           {filtered.map(p => {
             const isSelected = selectedPlayer?.id === p.id;
             return (
               <li
                 key={p.id}
+                role="option"
+                {...({ type: 'button' } as any)}
+                aria-selected={isSelected}
                 onClick={() => handleSelect(p)}
                 className={`p-2.5 hover:bg-white/10 cursor-pointer flex items-center justify-between transition ${
                   isSelected ? 'bg-sleeper-accent/15' : ''

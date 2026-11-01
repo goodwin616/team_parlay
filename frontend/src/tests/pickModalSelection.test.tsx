@@ -199,4 +199,32 @@ describe('PickModal Prop Selection Behavior (CR-002)', () => {
     expect(noButtonMatches).not.toBeNull();
     expect(noButtonMatches!.length).toBeGreaterThan(0);
   });
+
+  describe('Accessibility & ARIA Semantics (F-10 / F-11)', () => {
+    it('renders outer dialog with role="dialog", aria-modal="true", and aria-labelledby matching title', () => {
+      const html = renderToString(<PickModal {...baseProps} />);
+
+      expect(html).toContain('role="dialog"');
+      expect(html).toContain('aria-modal="true"');
+      expect(html).toContain('aria-labelledby="pick-modal-title"');
+      expect(html).toContain('id="pick-modal-title"');
+    });
+
+    it('renders close button with aria-label="Close" and type="button"', () => {
+      const html = renderToString(<PickModal {...baseProps} />);
+
+      expect(html).toContain('aria-label="Close"');
+      expect(html).toMatch(/<button[^>]*type="button"[^>]*aria-label="Close"/);
+    });
+
+    it('renders category tablist and tab buttons with aria-selected', () => {
+      const html = renderToString(<PickModal {...baseProps} />);
+
+      expect(html).toContain('role="tablist"');
+      expect(html).toContain('role="tab"');
+      // Default tab is player props
+      expect(html).toContain('aria-selected="true"');
+      expect(html).toContain('aria-selected="false"');
+    });
+  });
 });

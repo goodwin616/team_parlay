@@ -116,4 +116,27 @@ describe('TeamPickerModal', () => {
     // Select button styling
     expect(html).toContain('inline-flex items-center justify-center px-3 py-1 rounded-lg bg-sleeper-dark');
   });
+
+  it('renders modal dialog with accessibility attributes and keyboard-accessible team options', () => {
+    const html = renderToString(
+      <TeamPickerModal
+        isOpen={true}
+        onClose={() => {}}
+        teams={mockTeams}
+        currentRosterId={1}
+        currentUserId="u1"
+        leagueId="demo"
+        season="2026"
+        onTeamSelected={() => {}}
+      />
+    );
+
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('aria-labelledby="team-picker-title"');
+    expect(html).toContain('id="team-picker-title"');
+    expect(html).toContain('aria-label="Close"');
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain('role="button"');
+  });
 });

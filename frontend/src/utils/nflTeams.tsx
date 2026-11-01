@@ -73,8 +73,9 @@ export const TeamLogo: React.FC<TeamLogoProps> = ({
   size = 'md',
   className = '',
 }) => {
-  const [imgError, setImgError] = useState(false);
   const meta = getNflTeamMeta(team);
+  const [failedAbbr, setFailedAbbr] = useState<string | null>(null);
+  const imgError = failedAbbr === meta.abbr;
 
   const dims =
     size === 'sm'
@@ -105,7 +106,7 @@ export const TeamLogo: React.FC<TeamLogoProps> = ({
         alt={meta.abbr}
         width={pixelSize}
         height={pixelSize}
-        onError={() => setImgError(true)}
+        onError={() => setFailedAbbr(meta.abbr)}
         className="w-full h-full object-contain block select-none pointer-events-none"
         loading="lazy"
       />

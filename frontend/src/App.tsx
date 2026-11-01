@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import {
   History,
   ArrowLeftRight,
@@ -12,7 +12,11 @@ import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { BettorBanner } from './components/BettorBanner';
 import { ParlayCard } from './components/ParlayCard';
-import { PickModal, PickData } from './components/PickModal';
+import type { PickData } from './components/PickModal';
+
+const PickModal = React.lazy(() =>
+  import('./components/PickModal').then((m) => ({ default: m.PickModal }))
+);
 import { PastSlipsArchive } from './components/PastSlipsArchive';
 import { PrivacyModal } from './components/PrivacyModal';
 import { LeagueLandingPage } from './components/LeagueLandingPage';
@@ -23,6 +27,7 @@ import { WeeklyParlay, ActivePlayer, TeamProfile, ParlayLeg, GameLineOption } fr
 import {
   fetchDirectKalshiNflBoard,
   KALSHI_BOARD_CACHE_TTL_MS,
+  ParsedKalshiProp,
 } from './services/kalshi';
 import {
   useAuthUser,
@@ -596,10 +601,11 @@ export const App: React.FC = () => {
 
   const [activePlayers, setActivePlayers] = useState<ActivePlayer[]>(MOCK_ACTIVE_PLAYERS);
   const [kalshiGames, setKalshiGames] = useState<GameLineOption[]>([]);
-  const [kalshiProps, setKalshiProps] = useState<any[]>([]);
+  const [kalshiProps, setKalshiProps] = useState<ParsedKalshiProp[]>([]);
   const [liveMarketCount, setLiveMarketCount] = useState<number>(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [maxLegOddsPercent, setMaxLegOddsPercent] = useState<number | null>(null);
+  const [, setRouteTick] = useState(0);
   const lastKalshiFetchRef = useRef<number>(0);
 
   // Close profile menu when clicking outside
@@ -630,10 +636,11 @@ export const App: React.FC = () => {
     }
 
     let loadedLiveKalshi = false;
+    let loadedPlayersFromServer = false;
 
     const applyBoard = (board: {
       games?: GameLineOption[];
-      props?: any[];
+      props?: ParsedKalshiProp[];
       players?: ActivePlayer[];
       live_market_count?: number;
       updated_at?: string;
@@ -651,6 +658,7 @@ export const App: React.FC = () => {
       }
       if (Array.isArray(board.players) && board.players.length > 0) {
         loadedLiveKalshi = true;
+        loadedPlayersFromServer = true;
         setActivePlayers(board.players);
       }
       if (loadedLiveKalshi || (board.live_market_count && board.live_market_count > 0)) {
@@ -667,7 +675,7 @@ export const App: React.FC = () => {
         Record<string, never>,
         {
           games: GameLineOption[];
-          props: any[];
+          props: ParsedKalshiProp[];
           players: ActivePlayer[];
           live_market_count: number;
           updated_at?: string;
@@ -697,77 +705,79 @@ export const App: React.FC = () => {
     }
 
     // 2. Enrich positions from Sleeper
-    const enrichOrSetPlayers = (sleeperPlayers: ActivePlayer[]) => {
-      if (sleeperPlayers.length === 0) return;
-      const sleeperByName = new Map<string, ActivePlayer>();
-      for (const sp of sleeperPlayers) {
-        sleeperByName.set(sp.name.toLowerCase(), sp);
-      }
-      setActivePlayers((prev) => {
-        if (loadedLiveKalshi && prev.length > 0) {
-          return prev.map((kp) => {
-            const match = sleeperByName.get(kp.name.toLowerCase());
-            return match && kp.position === 'FLEX'
-              ? { ...kp, position: match.position }
-              : kp;
-          });
+    if (!loadedPlayersFromServer) {
+      const enrichOrSetPlayers = (sleeperPlayers: ActivePlayer[]) => {
+        if (sleeperPlayers.length === 0) return;
+        const sleeperByName = new Map<string, ActivePlayer>();
+        for (const sp of sleeperPlayers) {
+          sleeperByName.set(sp.name.toLowerCase(), sp);
         }
-        return sleeperPlayers;
-      });
-    };
+        setActivePlayers((prev) => {
+          if (loadedLiveKalshi && prev.length > 0) {
+            return prev.map((kp) => {
+              const match = sleeperByName.get(kp.name.toLowerCase());
+              return match && kp.position === 'FLEX'
+                ? { ...kp, position: match.position }
+                : kp;
+            });
+          }
+          return sleeperPlayers;
+        });
+      };
 
-    try {
-      const cached = sessionStorage.getItem('sleeper_nfl_offensive_players_v1');
-      if (cached) {
-        const parsed = JSON.parse(cached) as ActivePlayer[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          enrichOrSetPlayers(parsed);
-          return;
+      try {
+        const cached = sessionStorage.getItem('sleeper_nfl_offensive_players_v1');
+        if (cached) {
+          const parsed = JSON.parse(cached) as ActivePlayer[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            enrichOrSetPlayers(parsed);
+            return;
+          }
         }
-      }
 
-      const resp = await fetch('https://api.sleeper.app/v1/players/nfl');
-      if (resp.ok) {
-        const rawPlayers = await resp.json();
-        const validPos = new Set(['QB', 'RB', 'WR', 'TE']);
-        const ranked: Array<ActivePlayer & { rank: number }> = [];
-        for (const [pid, p] of Object.entries<any>(rawPlayers)) {
-          if (
-            p &&
-            p.active &&
-            p.team &&
-            validPos.has(p.position) &&
-            (p.depth_chart_order === 1 || p.depth_chart_order === 2 || (p.search_rank && p.search_rank <= 250))
-          ) {
-            const fullName =
-              p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim();
-            if (fullName) {
-              ranked.push({
-                id: pid,
-                name: fullName,
-                team: String(p.team),
-                position: String(p.position),
-                rank: Number(p.search_rank || 9999),
-              });
+        const resp = await fetch('https://api.sleeper.app/v1/players/nfl');
+        if (resp.ok) {
+          const rawPlayers = await resp.json();
+          const validPos = new Set(['QB', 'RB', 'WR', 'TE']);
+          const ranked: Array<ActivePlayer & { rank: number }> = [];
+          for (const [pid, p] of Object.entries<any>(rawPlayers)) {
+            if (
+              p &&
+              p.active &&
+              p.team &&
+              validPos.has(p.position) &&
+              (p.depth_chart_order === 1 || p.depth_chart_order === 2 || (p.search_rank && p.search_rank <= 250))
+            ) {
+              const fullName =
+                p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim();
+              if (fullName) {
+                ranked.push({
+                  id: pid,
+                  name: fullName,
+                  team: String(p.team),
+                  position: String(p.position),
+                  rank: Number(p.search_rank || 9999),
+                });
+              }
             }
           }
-        }
-        ranked.sort((a, b) => a.rank - b.rank);
-        const topPlayers: ActivePlayer[] = ranked.slice(0, 250).map(({ rank, ...rest }) => rest);
-        if (topPlayers.length > 0) {
-          try {
-            sessionStorage.setItem(
-              'sleeper_nfl_offensive_players_v1',
-              JSON.stringify(topPlayers)
-            );
-          } catch {
-            // Ignore quota errors
+          ranked.sort((a, b) => a.rank - b.rank);
+          const topPlayers: ActivePlayer[] = ranked.slice(0, 250).map(({ rank, ...rest }) => rest);
+          if (topPlayers.length > 0) {
+            try {
+              sessionStorage.setItem(
+                'sleeper_nfl_offensive_players_v1',
+                JSON.stringify(topPlayers)
+              );
+            } catch {
+              // Ignore quota errors
+            }
+            enrichOrSetPlayers(topPlayers);
           }
-          enrichOrSetPlayers(topPlayers);
         }
+      } catch {
+        // Keep existing player list
       }
-    } catch {
-      // Keep existing player list
     }
   };
 
@@ -785,6 +795,7 @@ export const App: React.FC = () => {
   // Listen to browser back/forward navigation
   useEffect(() => {
     const onPopState = () => {
+      setRouteTick((t) => t + 1);
       const nextId = getLeagueIdFromLocation(window.location);
       const isNextDemo = nextId?.toLowerCase() === 'demo';
       setLeagueId(nextId);
@@ -1087,7 +1098,7 @@ export const App: React.FC = () => {
     let isSubscribed = true;
 
     // Check live NFL week directly from Sleeper so transitions to a new week are caught immediately
-    if (!isDemo && !statusRoute.isStatusRoute) {
+    if (!isDemo && statusRoute.isStatusRoute) {
       fetch('https://api.sleeper.app/v1/state/nfl')
         .then((res) => (res.ok ? res.json() : null))
         .then((nflState) => {
@@ -1252,7 +1263,7 @@ export const App: React.FC = () => {
       unsubTeams();
       unsubParlays();
     };
-  }, [leagueId, season, user?.uid, statusRoute.isStatusRoute]);
+  }, [leagueId, user?.uid, statusRoute.isStatusRoute]);
 
   // Render Landing Page if no leagueId in URL
   if (!leagueId) {
@@ -1297,7 +1308,7 @@ export const App: React.FC = () => {
 
     try {
       const submitFn = httpsCallable(functions, 'submit_leg');
-      const { updatedParlay } = await submitPickToParlay({
+      const { updatedParlay, newLeg } = await submitPickToParlay({
         currentRosterId,
         currentTeam,
         pick,
@@ -1310,7 +1321,35 @@ export const App: React.FC = () => {
         submitFn: isDemo ? undefined : ((p) => submitFn(p)),
       });
 
-      setParlay(updatedParlay);
+      if (leagueId === 'demo') {
+        setParlay(updatedParlay);
+      } else {
+        setParlay((prev) => {
+          const currentLeg = prev.legs.find((l) => l.roster_id === currentRosterId);
+          if (
+            currentLeg &&
+            currentLeg.status === 'submitted' &&
+            (currentLeg.kalshi_market_ticker === newLeg.kalshi_market_ticker ||
+              currentLeg.description === newLeg.description)
+          ) {
+            return prev;
+          }
+          const updatedLegs: ParlayLeg[] = prev.legs.map((leg) =>
+            leg.roster_id === currentRosterId ? { ...leg, ...newLeg } : leg
+          );
+          const stats = calculateParlayStats(updatedLegs, 5.0);
+          return {
+            ...prev,
+            legs: updatedLegs,
+            estimated_odds_american: stats.odds_american,
+            estimated_multiplier: stats.multiplier,
+            estimated_payout: stats.estimated_payout,
+            combined_probability_cents: stats.combined_probability_cents,
+            contains_sgp: stats.contains_sgp,
+            earliest_kickoff: stats.earliest_kickoff || prev.earliest_kickoff,
+          };
+        });
+      }
     } catch (err: any) {
       if (!isDemo) {
         setParlay(previousParlay);
@@ -1687,21 +1726,25 @@ export const App: React.FC = () => {
         </main>
 
         {/* Interactive Modals */}
-        <PickModal
-          isOpen={isPickOpen}
-          onClose={() => setIsPickOpen(false)}
-          onSubmitPick={handlePickSubmit}
-          rosterName={currentTeam?.team_name || ''}
-          activePlayers={activePlayers}
-          kalshiGames={kalshiGames}
-          kalshiProps={kalshiProps}
-          liveMarketCount={liveMarketCount}
-          lastUpdated={lastUpdated}
-          oddsFormat={oddsFormat}
-          onToggleOddsFormat={handleToggleOddsFormat}
-          currentLeg={currentRosterId !== null ? parlay.legs.find(l => l.roster_id === currentRosterId) : undefined}
-          maxLegOddsPercent={maxLegOddsPercent}
-        />
+        {isPickOpen && (
+          <Suspense fallback={null}>
+            <PickModal
+              isOpen={isPickOpen}
+              onClose={() => setIsPickOpen(false)}
+              onSubmitPick={handlePickSubmit}
+              rosterName={currentTeam?.team_name || ''}
+              activePlayers={activePlayers}
+              kalshiGames={kalshiGames}
+              kalshiProps={kalshiProps}
+              liveMarketCount={liveMarketCount}
+              lastUpdated={lastUpdated}
+              oddsFormat={oddsFormat}
+              onToggleOddsFormat={handleToggleOddsFormat}
+              currentLeg={currentRosterId !== null ? parlay.legs.find(l => l.roster_id === currentRosterId) : undefined}
+              maxLegOddsPercent={maxLegOddsPercent}
+            />
+          </Suspense>
+        )}
 
         <PastSlipsArchive
           isOpen={isArchiveOpen}
@@ -1715,23 +1758,25 @@ export const App: React.FC = () => {
         />
 
         {/* Team Picker Modal */}
-        <TeamPickerModal
-          isOpen={isTeamPickerOpen}
-          onClose={() => setIsTeamPickerOpen(false)}
-          teams={teams}
-          currentRosterId={currentRosterId}
-          currentUserId={user?.uid}
-          leagueId={leagueId}
-          season={season}
-          onTeamSelected={(rosterId, claimedBy) => {
-            setCurrentRosterId(rosterId);
-            currentRosterIdRef.current = rosterId;
-            saveCachedTeamId(leagueId, rosterId, user?.uid);
-            if (claimedBy) {
-              setTeams(prev => prev.map(t => t.roster_id === rosterId ? { ...t, claimed_by: claimedBy } : t));
-            }
-          }}
-        />
+        {isTeamPickerOpen && (
+          <TeamPickerModal
+            isOpen={isTeamPickerOpen}
+            onClose={() => setIsTeamPickerOpen(false)}
+            teams={teams}
+            currentRosterId={currentRosterId}
+            currentUserId={user?.uid}
+            leagueId={leagueId}
+            season={season}
+            onTeamSelected={(rosterId, claimedBy) => {
+              setCurrentRosterId(rosterId);
+              currentRosterIdRef.current = rosterId;
+              saveCachedTeamId(leagueId, rosterId, user?.uid);
+              if (claimedBy) {
+                setTeams(prev => prev.map(t => t.roster_id === rosterId ? { ...t, claimed_by: claimedBy } : t));
+              }
+            }}
+          />
+        )}
       </div>
     </SignInGate>
   );

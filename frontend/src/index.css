@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light dark;
+  --scrollbar-track: #0d0f14;
+  --scrollbar-thumb: #1f2430;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
 @layer base {
   body {
     background-color: #121A24;
@@ -10,21 +18,30 @@
   }
 }
 
-/* Custom scrollbar styling for dark mode */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Custom scrollbar styling fallback for browsers without scrollbar-color support */
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #121A24;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #2B384E;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #00CEB8;
+  }
 }
 
-::-webkit-scrollbar-track {
-  background: #121A24;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #2B384E;
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #00CEB8;
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+  }
 }

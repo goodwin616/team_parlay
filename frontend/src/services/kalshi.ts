@@ -89,6 +89,41 @@ const NFL_TEAMS_MAP: Record<string, string[]> = {
 
 const VALID_TEAM_CODES = new Set([...Object.keys(NFL_TEAMS_MAP), 'JAC', 'LA']);
 
+export interface KalshiMarket {
+  ticker?: string;
+  event_ticker?: string;
+  series_ticker?: string;
+  title?: string;
+  subtitle?: string;
+  yes_sub_title?: string;
+  status?: string;
+  yes_ask_dollars?: string | number | null;
+  no_ask_dollars?: string | number | null;
+  yes_bid_dollars?: string | number | null;
+  no_bid_dollars?: string | number | null;
+  yes_ask?: string | number | null;
+  no_ask?: string | number | null;
+  yes_bid?: string | number | null;
+  no_bid?: string | number | null;
+  last_price_dollars?: string | number | null;
+  rules_primary?: string;
+  expected_expiration_time?: string;
+  occurrence_datetime?: string;
+  close_time?: string;
+  commence_time?: string;
+  expiration_time?: string;
+  home_team?: string;
+  away_team?: string;
+  target_team?: string;
+  nfl_team?: string;
+  player_name?: string;
+  stat_category?: string;
+  game_id?: string;
+  floor_strike?: number | string | null;
+  point?: number | string | null;
+  [key: string]: unknown;
+}
+
 export function normalizeNflTeam(name: string): string {
   const cleaned = (name || '').trim().toUpperCase();
   for (const [code, aliases] of Object.entries(NFL_TEAMS_MAP)) {
@@ -114,26 +149,30 @@ export function splitEventTeamsCode(teamsStr: string): [string, string] {
   return ['AWAY', 'HOME'];
 }
 
-export function extractKalshiPriceCents(market: any, side: 'yes' | 'no' = 'yes'): number {
+export function extractKalshiPriceCents(
+  market: KalshiMarket | Record<string, unknown> | null | undefined,
+  side: 'yes' | 'no' = 'yes'
+): number {
+  if (!market) return 54;
   const dollarsKey = `${side}_ask_dollars`;
   const bidDollarsKey = `${side}_bid_dollars`;
   const askKey = `${side}_ask`;
   const bidKey = `${side}_bid`;
 
   let valCents: number | null = null;
-  if (market?.[dollarsKey] != null) {
+  if (market[dollarsKey] != null) {
     const parsed = parseFloat(String(market[dollarsKey]));
     if (!Number.isNaN(parsed)) valCents = parsed * 100;
-  } else if (market?.[askKey] != null) {
+  } else if (market[askKey] != null) {
     const parsed = parseFloat(String(market[askKey]));
     if (!Number.isNaN(parsed)) valCents = parsed;
-  } else if (side === 'yes' && market?.last_price_dollars != null) {
+  } else if (side === 'yes' && market.last_price_dollars != null) {
     const parsed = parseFloat(String(market.last_price_dollars));
     if (!Number.isNaN(parsed)) valCents = parsed * 100;
-  } else if (market?.[bidDollarsKey] != null) {
+  } else if (market[bidDollarsKey] != null) {
     const parsed = parseFloat(String(market[bidDollarsKey]));
     if (!Number.isNaN(parsed)) valCents = parsed * 100;
-  } else if (market?.[bidKey] != null) {
+  } else if (market[bidKey] != null) {
     const parsed = parseFloat(String(market[bidKey]));
     if (!Number.isNaN(parsed)) valCents = parsed;
   }
@@ -144,7 +183,9 @@ export function extractKalshiPriceCents(market: any, side: 'yes' | 'no' = 'yes')
   return Math.max(1, Math.min(99, Math.round(valCents)));
 }
 
-export function extractKalshiKickoffTime(market: any): string {
+export function extractKalshiKickoffTime(
+  market: KalshiMarket | Record<string, unknown> | null | undefined
+): string {
   const exp = market?.expected_expiration_time || market?.occurrence_datetime;
   if (exp) {
     const ms = Date.parse(String(exp));
@@ -153,9 +194,9 @@ export function extractKalshiKickoffTime(market: any): string {
     }
   }
   return (
-    market?.close_time ||
-    market?.commence_time ||
-    market?.expiration_time ||
+    (market?.close_time as string) ||
+    (market?.commence_time as string) ||
+    (market?.expiration_time as string) ||
     new Date().toISOString()
   );
 }
@@ -174,15 +215,17 @@ export function getNflWeekBucketKey(kickoffIso?: string): string {
   return wednesday.toISOString().slice(0, 10);
 }
 
-export function inferTeamsFromKalshiMarket(market: any): {
+export function inferTeamsFromKalshiMarket(
+  market: KalshiMarket | Record<string, unknown> | null | undefined
+): {
   awayTeam: string;
   homeTeam: string;
   targetTeam: string;
 } {
   if (market?.home_team && market?.away_team) {
-    const h = normalizeNflTeam(market.home_team);
-    const a = normalizeNflTeam(market.away_team);
-    const t = market.target_team ? normalizeNflTeam(market.target_team) : h;
+    const h = normalizeNflTeam(String(market.home_team));
+    const a = normalizeNflTeam(String(market.away_team));
+    const t = market.target_team ? normalizeNflTeam(String(market.target_team)) : h;
     return { awayTeam: a, homeTeam: h, targetTeam: t };
   }
 
@@ -226,7 +269,7 @@ export function inferTeamsFromKalshiMarket(market: any): {
 
   let t = h;
   if (market?.target_team) {
-    t = normalizeNflTeam(market.target_team);
+    t = normalizeNflTeam(String(market.target_team));
   } else if (suffixTeam && NFL_TEAMS_MAP[suffixTeam]) {
     t = suffixTeam;
   } else if (titleWins) {
@@ -244,14 +287,23 @@ export interface ParsedKalshiProp extends KalshiPropContract {
   player_name: string;
   nfl_team: string;
   position: string;
+  title?: string;
+  yes_price_cents?: number;
+  no_price_cents?: number;
+  yes_odds_american?: string;
+  no_odds_american?: string;
+  [key: string]: unknown;
 }
 
-export function parseKalshiPropMarket(market: any, seriesTicker = ''): ParsedKalshiProp {
+export function parseKalshiPropMarket(
+  market: KalshiMarket | Record<string, unknown>,
+  seriesTicker = ''
+): ParsedKalshiProp {
   const ticker = String(market?.ticker || '');
   const eventTicker = String(market?.event_ticker || '');
   const resolvedSeries =
     seriesTicker ||
-    market?.series_ticker ||
+    (market?.series_ticker as string) ||
     (eventTicker.includes('-') ? eventTicker.split('-')[0] : '') ||
     (ticker.includes('-') ? ticker.split('-')[0] : '');
 
@@ -265,7 +317,7 @@ export function parseKalshiPropMarket(market: any, seriesTicker = ''): ParsedKal
   const kickoffTime = extractKalshiKickoffTime(market);
   const { awayTeam, homeTeam } = inferTeamsFromKalshiMarket(market);
 
-  let nflTeam = market?.nfl_team ? normalizeNflTeam(market.nfl_team) : 'NFL';
+  let nflTeam = market?.nfl_team ? normalizeNflTeam(String(market.nfl_team)) : 'NFL';
   if (nflTeam === 'NFL') {
     const parts = ticker.split('-');
     if (parts.length >= 3) {
@@ -297,7 +349,7 @@ export function parseKalshiPropMarket(market: any, seriesTicker = ''): ParsedKal
   }
 
   const statCategory =
-    market?.stat_category || SERIES_CATEGORY_MAP[resolvedSeries] || 'Touchdowns';
+    (market?.stat_category as string) || SERIES_CATEGORY_MAP[resolvedSeries] || 'Touchdowns';
   const position = SERIES_POSITION_MAP[resolvedSeries] || 'FLEX';
   const gameId = (eventTicker || String(market?.game_id || '')).replace(
     /^KXNFL[A-Z0-9]*-/,
@@ -321,7 +373,9 @@ export function parseKalshiPropMarket(market: any, seriesTicker = ''): ParsedKal
   };
 }
 
-export function parseKalshiGameMarketsToOptions(rawMarkets: any[]): GameLineOption[] {
+export function parseKalshiGameMarketsToOptions(
+  rawMarkets: Array<KalshiMarket | Record<string, unknown> | null | undefined>
+): GameLineOption[] {
   const gamesById = new Map<
     string,
     {
@@ -519,7 +573,7 @@ export function parseKalshiGameMarketsToOptions(rawMarkets: any[]): GameLineOpti
 
 export const KALSHI_BOARD_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-interface KalshiBoardResult {
+export interface KalshiBoardResult {
   games: GameLineOption[];
   props: ParsedKalshiProp[];
   players: ActivePlayer[];
@@ -545,14 +599,14 @@ export async function fetchDirectKalshiNflBoard(
     try {
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-      const fetchSeries = async (series: string): Promise<any[]> => {
+      const fetchSeries = async (series: string): Promise<KalshiMarket[]> => {
         const baseUrls = [
           ...(import.meta.env.DEV ? ['/kalshi-api/markets'] : []),
           'https://api.elections.kalshi.com/trade-api/v2/markets',
         ];
         for (const baseUrl of baseUrls) {
           try {
-            const collected: any[] = [];
+            const collected: KalshiMarket[] = [];
             let cursor = '';
             let page = 0;
             let baseWorked = false;
@@ -585,11 +639,11 @@ export async function fetchDirectKalshiNflBoard(
             if (baseWorked) {
               return collected
                 .filter(
-                  (m: any) =>
+                  (m: KalshiMarket) =>
                     !['finalized', 'settled', 'closed'].includes(String(m?.status || '')) &&
                     !(m?.yes_ask_dollars === '1.0000' && m?.no_ask_dollars === '1.0000')
                 )
-                .map((m: any) => ({ ...m, series_ticker: m.series_ticker || series }));
+                .map((m: KalshiMarket) => ({ ...m, series_ticker: (m.series_ticker as string) || series }));
             }
           } catch {
             // Try next base URL
@@ -599,8 +653,8 @@ export async function fetchDirectKalshiNflBoard(
       };
 
       // Fetch in small batches of 3 to avoid Kalshi 429 burst rate limits
-      const fetchBatched = async (seriesList: readonly string[]): Promise<any[][]> => {
-        const results: any[][] = [];
+      const fetchBatched = async (seriesList: readonly string[]): Promise<KalshiMarket[][]> => {
+        const results: KalshiMarket[][] = [];
         const batchSize = 3;
         for (let i = 0; i < seriesList.length; i += batchSize) {
           const slice = seriesList.slice(i, i + batchSize);
@@ -613,7 +667,7 @@ export async function fetchDirectKalshiNflBoard(
       const gameResults = await fetchBatched(NFL_GAME_SERIES);
       const propResults = await fetchBatched(NFL_PROP_SERIES);
 
-      const rawGameMarkets = gameResults.flat();
+      const rawGameMarkets: KalshiMarket[] = gameResults.flat();
       const games = parseKalshiGameMarketsToOptions(rawGameMarkets);
       const activeWeekKey =
         games.length > 0 ? getNflWeekBucketKey(games[0].commence_time) : '';

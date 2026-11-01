@@ -31,7 +31,12 @@ export const ClaimConfirmModal: React.FC<ClaimConfirmModalProps> = ({
   const isOverride = mode === 'override';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="claim-confirm-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn"
+    >
       <div className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
         {/* Header */}
         <div className="flex justify-between items-center px-5 py-4 border-b border-sleeper-border bg-sleeper-dark/50">
@@ -41,12 +46,13 @@ export const ClaimConfirmModal: React.FC<ClaimConfirmModalProps> = ({
             ) : (
               <ShieldCheck className="w-5 h-5 text-sleeper-accent shrink-0" />
             )}
-            <h3 className="text-sm font-black text-white uppercase tracking-wider">
+            <h2 id="claim-confirm-title" className="text-sm font-black text-white uppercase tracking-wider">
               {isOverride ? 'Team Already Claimed' : 'Claim Fantasy Team'}
-            </h3>
+            </h2>
           </div>
           <button
             type="button"
+            aria-label="Close"
             onClick={onClose}
             className="p-1 rounded-lg text-gray-400 hover:text-white transition"
           >

@@ -54,7 +54,7 @@ export const LeagueLandingPage: React.FC<Props> = ({
           <form onSubmit={handleSubmit} className="space-y-3.5">
             <div>
               <label
-                htmlFor="league-id-input"
+                htmlFor="sleeper-league-id"
                 className="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-1.5"
               >
                 Enter Sleeper League ID or URL
@@ -62,7 +62,10 @@ export const LeagueLandingPage: React.FC<Props> = ({
               <div className="relative">
                 <Hash className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
-                  id="league-id-input"
+                  id="sleeper-league-id"
+                  name="leagueId"
+                  aria-label="Sleeper League ID"
+                  aria-describedby={error ? 'league-id-error' : undefined}
                   type="text"
                   value={inputVal}
                   onChange={(e) => {
@@ -74,7 +77,14 @@ export const LeagueLandingPage: React.FC<Props> = ({
                 />
               </div>
               {error && (
-                <p className="text-xs text-red-400 mt-1.5 font-medium">{error}</p>
+                <div
+                  id="league-id-error"
+                  role="alert"
+                  aria-live="polite"
+                  className="text-xs text-red-400 mt-1.5 font-medium"
+                >
+                  {error}
+                </div>
               )}
               <span className="block text-[11px] text-sleeper-muted mt-1.5">
                 Tip: You can also bookmark <code className="text-gray-300">/&lt;league_id&gt;</code> directly in your browser.

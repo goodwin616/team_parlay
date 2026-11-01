@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Clock,
   Lock,
@@ -52,6 +52,8 @@ export const ParlayCard: React.FC<Props> = ({
       return;
     }
 
+    let interval: ReturnType<typeof setInterval> | undefined;
+
     const updateTimer = () => {
       const target = new Date(parlay.earliest_kickoff!).getTime();
       const now = new Date().getTime();
@@ -59,6 +61,9 @@ export const ParlayCard: React.FC<Props> = ({
 
       if (diff <= 0) {
         setTimeLeft('Kickoff Passed');
+        if (interval) {
+          clearInterval(interval);
+        }
         return;
       }
 
@@ -75,8 +80,13 @@ export const ParlayCard: React.FC<Props> = ({
     };
 
     updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
+    const target = new Date(parlay.earliest_kickoff!).getTime();
+    if (target - Date.now() > 0) {
+      interval = setInterval(updateTimer, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [parlay.earliest_kickoff]);
 
   const submittedCount = parlay.legs.filter(l => l.status === 'submitted').length;
@@ -86,11 +96,13 @@ export const ParlayCard: React.FC<Props> = ({
   const payoutPerPlayer = submittedCount > 0 ? totalPayout / submittedCount : 0;
 
   // Pin current user's leg to the top of the list so it's always immediately accessible
-  const orderedLegs = [...parlay.legs].sort((a, b) => {
-    const aIsUser = currentRosterId !== null && a.roster_id === currentRosterId ? 0 : 1;
-    const bIsUser = currentRosterId !== null && b.roster_id === currentRosterId ? 0 : 1;
-    return aIsUser - bIsUser;
-  });
+  const orderedLegs = useMemo(() => {
+    return [...parlay.legs].sort((a, b) => {
+      const aIsUser = currentRosterId !== null && a.roster_id === currentRosterId ? 0 : 1;
+      const bIsUser = currentRosterId !== null && b.roster_id === currentRosterId ? 0 : 1;
+      return aIsUser - bIsUser;
+    });
+  }, [parlay.legs, currentRosterId]);
 
   const hasTnf = parlay.legs.some(
     leg =>
