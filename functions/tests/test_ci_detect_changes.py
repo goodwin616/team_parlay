@@ -132,13 +132,13 @@ def test_firebaserc_points_to_goodwin_team_parlay():
 def test_cloudbuild_yaml_defines_expected_steps_and_substitutions():
     content = (REPO_ROOT / "cloudbuild.yaml").read_text()
     for step_id in [
-        "id: 'detect-changes'",
-        "id: 'test-and-build-frontend'",
-        "id: 'test-and-prep-functions'",
-        "id: 'deploy-hosting-and-rules'",
-        "id: 'deploy-functions'",
+        'detect-changes',
+        'test-and-build-frontend',
+        'test-and-prep-functions',
+        'deploy-hosting-and-rules',
+        'deploy-functions',
     ]:
-        assert step_id in content
+        assert f"id: '{step_id}'" in content or f'id: "{step_id}"' in content
     for sub in [
         "_VITE_FIREBASE_AUTH_DOMAIN",
         "_VITE_FIREBASE_STORAGE_BUCKET",
