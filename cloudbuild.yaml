@@ -49,6 +49,7 @@ steps:
       - "VITE_FIREBASE_STORAGE_BUCKET=${_VITE_FIREBASE_STORAGE_BUCKET}"
       - "VITE_FIREBASE_MESSAGING_SENDER_ID=${_VITE_FIREBASE_MESSAGING_SENDER_ID}"
       - "VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID}"
+      - "VITE_FIREBASE_MEASUREMENT_ID=${_VITE_FIREBASE_MEASUREMENT_ID}"
 
   # ----------------------------------------------------------------------------
   # 3. Python Functions Test & Env Setup (runs only when DEPLOY_FUNCTIONS=true)
@@ -131,6 +132,7 @@ substitutions:
   _VITE_FIREBASE_STORAGE_BUCKET: 'goodwin-team-parlay.firebasestorage.app'
   _VITE_FIREBASE_MESSAGING_SENDER_ID: '411391028164'
   _VITE_FIREBASE_APP_ID: 'goodwin-team-parlay-web'
+  _VITE_FIREBASE_MEASUREMENT_ID: 'G-MXKX0DL7ZV'
 
 availableSecrets:
   secretManager:
