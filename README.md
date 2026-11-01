@@ -263,15 +263,25 @@ This repository includes a change-based **Google Cloud Build** pipeline ([`cloud
 - **GCP-Native & Keyless**: Runs directly inside your `goodwin-team-parlay` GCP project with zero exported service account JSON keys.
 - **Automated Verification**: Automatically runs `vitest` + `tsc` on frontend changes and `pytest` on Cloud Functions changes prior to deployment.
 
-#### 1. Grant IAM Roles to Cloud Build Service Account
-In your terminal with `gcloud` authenticated to `goodwin-team-parlay`:
+#### 1. Store the Firebase Web API Key in Secret Manager
+Store your Firebase Web API Key in Google Cloud Secret Manager so Cloud Build can inject it into builds securely without exposing it in plaintext trigger substitutions or build logs:
 
 ```bash
 PROJECT_ID="goodwin-team-parlay"
+
+echo -n "YOUR_FIREBASE_WEB_API_KEY" | gcloud secrets create VITE_FIREBASE_API_KEY \
+  --project="$PROJECT_ID" \
+  --data-file=-
+```
+
+#### 2. Grant IAM Roles to Cloud Build Service Account
+In your terminal with `gcloud` authenticated to `goodwin-team-parlay`:
+
+```bash
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
 CB_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
 
-# Grant Firebase & Cloud Run deployment permissions
+# Grant Firebase, Cloud Run, and Secret Manager access
 for ROLE in \
   roles/firebase.admin \
   roles/cloudfunctions.admin \
@@ -284,8 +294,8 @@ for ROLE in \
 done
 ```
 
-#### 2. Create the Cloud Build GitHub Trigger
-Connect your repository in [GCP Console → Cloud Build → Triggers](https://console.cloud.google.com/cloud-build/triggers), or create the trigger with substitution variables:
+#### 3. Create the Cloud Build GitHub Trigger
+Connect your repository in [GCP Console → Cloud Build → Triggers](https://console.cloud.google.com/cloud-build/triggers), or create the trigger using non-sensitive public configuration:
 
 ```bash
 gcloud builds triggers create github \
@@ -296,7 +306,6 @@ gcloud builds triggers create github \
   --branch-pattern="^main$" \
   --build-config="cloudbuild.yaml" \
   --substitutions=\
-_VITE_FIREBASE_API_KEY="YOUR_FIREBASE_WEB_API_KEY",\
 _VITE_FIREBASE_AUTH_DOMAIN="goodwin-team-parlay.firebaseapp.com",\
 _VITE_FIREBASE_STORAGE_BUCKET="goodwin-team-parlay.firebasestorage.app",\
 _VITE_FIREBASE_MESSAGING_SENDER_ID="YOUR_SENDER_ID",\

@@ -140,7 +140,6 @@ def test_cloudbuild_yaml_defines_expected_steps_and_substitutions():
     ]:
         assert step_id in content
     for sub in [
-        "_VITE_FIREBASE_API_KEY",
         "_VITE_FIREBASE_AUTH_DOMAIN",
         "_VITE_FIREBASE_STORAGE_BUCKET",
         "_VITE_FIREBASE_MESSAGING_SENDER_ID",
@@ -148,6 +147,10 @@ def test_cloudbuild_yaml_defines_expected_steps_and_substitutions():
         "_MAX_LEG_ODDS_PERCENT",
     ]:
         assert sub in content
+    # VITE_FIREBASE_API_KEY must be sourced from Secret Manager via availableSecrets, NOT plain substitutions
+    assert "availableSecrets:" in content
+    assert "projects/$PROJECT_ID/secrets/VITE_FIREBASE_API_KEY/versions/latest" in content
+    assert "_VITE_FIREBASE_API_KEY" not in content
 
 import shutil
 import re
