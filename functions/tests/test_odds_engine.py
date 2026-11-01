@@ -225,6 +225,27 @@ def test_kalshi_combo_quote_compound_and_authenticated_mve():
         assert mve_quote["estimated_payout"] == 25.0
         assert mve_quote["odds_american"] == "+400"
 
+    # Sub-cent resting book quote (> +9900, < 1.0% / 1 cent)
+    with patch("requests.post") as mock_post:
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "market": {
+                "ticker": "KXMVE-COMBO-LONGSHOT",
+                "yes_ask_dollars": "0.0050",  # 0.5 cents -> 200.0x multiplier -> +19900
+            }
+        }
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        longshot_quote = auth_client.fetch_combo_quote(
+            legs, stake=5.0, collection_ticker="KXMVENFLSINGLEGAME"
+        )
+        assert longshot_quote["pricing_source"] == "kalshi_mve"
+        assert longshot_quote["multiplier"] == 200.0
+        assert longshot_quote["estimated_payout"] == 1000.0
+        assert longshot_quote["odds_american"] == "+19900"
+        assert longshot_quote["combined_probability_cents"] == 0.5
+
 def test_kalshi_api_client_loads_key_file(tmp_path):
     key_file = tmp_path / "kalshi_private.key"
     key_file.write_text("-----BEGIN RSA PRIVATE KEY-----\nmock_file_key\n-----END RSA PRIVATE KEY-----")

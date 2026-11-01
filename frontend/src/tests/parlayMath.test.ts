@@ -38,11 +38,25 @@ describe('Kalshi & Parlay Math Logic', () => {
 
     expect(decimalToKalshiCents(2.0)).toBe(50);
     expect(decimalToKalshiCents(2.5)).toBe(40);
+    expect(decimalToKalshiCents(200.0)).toBe(0.5);
     expect(formatOddsWithCents('-117', 54)).toBe('-117 (54¢)');
     expect(formatOddsWithCents('-117', 54, 'american')).toBe('-117');
     expect(formatOddsWithCents('-117', 54, 'percentage')).toBe('54%');
+    expect(formatOddsWithCents('+19900', 0.5)).toBe('+19900 (0.5¢)');
+    expect(formatOddsWithCents('+19900', 0.5, 'percentage')).toBe('0.5%');
+    expect(formatOddsWithCents('+249900', 0.04, 'percentage')).toBe('<0.1%');
     expect(formatComboOdds('+660', 7.6, 13, 'american')).toBe('+660');
     expect(formatComboOdds('+660', 7.6, 13, 'percentage')).toBe('13%');
+    expect(formatComboOdds('+19900', 200.0, 0.5, 'american')).toBe('+19900');
+    expect(formatComboOdds('+19900', 200.0, 0.5, 'percentage')).toBe('0.5%');
+    expect(formatComboOdds('+249900', 2500.0, 0.04, 'percentage')).toBe('<0.1%');
+  });
+
+  it('supports sub-cent prices and odds exceeding +9900 without capping at 1.0%', () => {
+    expect(kalshiCentsToDecimal(0.5)).toBe(200.0);
+    expect(kalshiCentsToAmerican(0.5)).toBe('+19900');
+    expect(kalshiCentsToDecimal(0.25)).toBe(400.0);
+    expect(kalshiCentsToAmerican(0.25)).toBe('+39900');
   });
 
   it('formats data freshness indicator accurately across time intervals', () => {

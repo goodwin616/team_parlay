@@ -20,35 +20,47 @@ def decimal_to_american(decimal: float) -> str:
 
 def kalshi_cents_to_decimal(price_cents: Union[int, float]) -> float:
     """
-    Converts a Kalshi contract price in cents (1 to 99) into decimal odds.
+    Converts a Kalshi contract price in cents into decimal odds.
     A contract costing c cents pays out 100 cents ($1.00), so D = 100 / c.
+    Supports sub-cent prices for combos/longshots (e.g. 0.5¢ -> 200.0x).
     """
-    cents = max(1.0, min(99.0, float(price_cents)))
+    cents = float(price_cents)
+    if cents <= 0:
+        return 1.0
+    cents = min(99.0, cents)
     return round(100.0 / cents, 4)
 
-def decimal_to_kalshi_cents(decimal_odds: float) -> int:
+def decimal_to_kalshi_cents(decimal_odds: float) -> Union[int, float]:
     """
-    Converts decimal odds into an implied Kalshi contract price in cents (1 to 99).
+    Converts decimal odds into an implied Kalshi contract price in cents.
+    Returns integer cents when >= 1, or float cents when sub-cent.
     """
     if decimal_odds <= 1.0:
         return 99
-    cents = round(100.0 / decimal_odds)
-    return max(1, min(99, int(cents)))
+    cents = 100.0 / decimal_odds
+    if cents >= 1.0:
+        return max(1, min(99, int(round(cents))))
+    return round(max(0.0001, cents), 4)
 
 def kalshi_cents_to_american(price_cents: Union[int, float]) -> str:
     """
-    Converts a Kalshi contract price in cents (1 to 99) to American odds.
+    Converts a Kalshi contract price in cents to American odds.
     """
     dec = kalshi_cents_to_decimal(price_cents)
     return decimal_to_american(dec)
 
 def format_odds_with_cents(odds_american: str, price_cents: Optional[Union[int, float]] = None) -> str:
     """
-    Formats American odds primary with Kalshi cents secondary, e.g. '-115 (54¢)'.
+    Formats American odds primary with Kalshi cents secondary, e.g. '-115 (54¢)' or '+19900 (0.5¢)'.
     """
     if price_cents is None:
         price_cents = decimal_to_kalshi_cents(american_to_decimal(odds_american))
-    return f"{odds_american} ({int(round(price_cents))}¢)"
+    val = float(price_cents)
+    if 0.0 < val < 1.0:
+        cents_str = f"{val:.1f}¢"
+    else:
+        cents_str = f"{int(round(val))}¢"
+    return f"{odds_american} ({cents_str})"
 
 def check_sgp_correlation(legs: List[Dict[str, Any]]) -> bool:
     submitted = [
