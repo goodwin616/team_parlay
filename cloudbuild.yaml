@@ -39,7 +39,7 @@ steps:
 
         echo "Building frontend with production Firebase configuration..."
         cd frontend
-        npm ci
+        npm install
         npm test -- --run
         npx tsc --noEmit
         npm run build
