@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Clock,
+  Lock,
   AlertTriangle,
   CheckCircle2,
   CircleDashed,
@@ -283,8 +284,21 @@ export const ParlayCard: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Earliest Kickoff Deadline Banner */}
-      {parlay.earliest_kickoff && (
+      {/* Earliest Kickoff Deadline Banner or Locked Status Banner */}
+      {parlay.status === 'locked' ? (
+        <div className="px-4 py-2.5 bg-amber-950/40 border-b border-amber-900/50 flex items-center justify-between text-xs text-amber-200">
+          <div className="flex items-center space-x-2">
+            <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>
+              <strong>Ticket Locked: </strong>
+              Submissions are closed for Week {parlay.week}
+            </span>
+          </div>
+          <span className="font-bold text-amber-300 bg-amber-900/60 px-2 py-0.5 rounded border border-amber-700/50 text-[11px] uppercase tracking-wider">
+            Locked
+          </span>
+        </div>
+      ) : parlay.earliest_kickoff ? (
         <div className="px-4 py-2.5 bg-blue-950/40 border-b border-blue-900/50 flex items-center justify-between text-xs text-blue-200">
           <div className="flex items-center space-x-2">
             <Clock className="w-4 h-4 text-blue-400 shrink-0" />
@@ -303,7 +317,7 @@ export const ParlayCard: React.FC<Props> = ({
             </span>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* Same-Game Combo Alert Badge */}
       {!isOfficialQuote && parlay.contains_sgp && (

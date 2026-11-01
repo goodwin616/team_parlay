@@ -304,4 +304,25 @@ describe('LeagueStatusPage & Agent Read-Only View', () => {
     expect(html).toContain('Status Page');
     expect(html).toContain('href="/status/demo"');
   });
+
+  it('renders Closed (Ticket Locked) in markdown and Closed (Locked) in UI when parlay is locked', () => {
+    const lockedPayload = buildSanitizedStatusPayload({
+      leagueId: '12345',
+      leagueName: 'Sunday Degens',
+      season: '2026',
+      currentWeek: 4,
+      teams: SAMPLE_TEAMS,
+      parlay: { ...SAMPLE_PARLAY, status: 'locked' },
+    });
+
+    const md = renderStatusMarkdown(lockedPayload);
+    expect(md).toContain('- **Submission Deadline (Earliest Kickoff)**: Closed (Ticket Locked)');
+
+    const html = renderToString(
+      <LeagueStatusPage
+        payload={lockedPayload}
+      />
+    );
+    expect(html).toContain('Closed (Locked)');
+  });
 });

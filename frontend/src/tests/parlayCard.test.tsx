@@ -473,5 +473,25 @@ describe('ParlayCard Component', () => {
       );
       expect(officialHtml).not.toContain('Same-Game Combo Detected');
     });
+
+    it('shows Ticket Locked banner and hides submission deadline when status is locked', () => {
+      const lockedParlay: WeeklyParlay = {
+        ...activeParlay,
+        status: 'locked',
+        earliest_kickoff: '2026-11-01T17:00:00Z',
+      };
+      const html = cleanText(
+        renderToString(
+          <ParlayCard
+            parlay={lockedParlay}
+            currentRosterId={1}
+            onOpenPickModal={() => {}}
+          />
+        )
+      );
+      expect(html).toContain('Ticket Locked:');
+      expect(html).toContain(`Submissions are closed for Week ${lockedParlay.week}`);
+      expect(html).not.toContain('Submission Deadline:');
+    });
   });
 });

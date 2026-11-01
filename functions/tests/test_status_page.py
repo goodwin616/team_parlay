@@ -231,6 +231,46 @@ class TestBuildSanitizedLeagueStatus:
         assert payload["week"] == 4
         assert payload["parlay"]["counts"]["total_managers"] == 5
 
+    def test_locked_parlay_deadline_shows_closed(self):
+        parlay_locked = {
+            "week": 4,
+            "status": "locked",
+            "outcome": "pending",
+            "settlement_status": "pending",
+            "stake_dollars": 5.0,
+            "contains_sgp": False,
+            "earliest_kickoff": "2026-11-01T17:00:00Z",
+            "bettor": {
+                "roster_id": 2,
+                "owner_name": "Bob",
+                "team_name": "Gridiron Clowns",
+                "points_last_week": 78.4,
+            },
+            "legs": [
+                {
+                    "roster_id": 1,
+                    "owner_name": "Blake",
+                    "team_name": "Philly Special",
+                    "nfl_team": "PHI",
+                    "description": "Saquon Barkley Anytime TD",
+                    "status": "submitted",
+                    "outcome": "pending",
+                    "kickoff_time": "2026-11-01T17:00:00Z",
+                }
+            ],
+        }
+        db = self._mock_firestore(
+            {"name": "Sunday Degens", "active_season": "2026", "current_week": 4},
+            [{"roster_id": 1, "owner_name": "Blake", "team_name": "Philly Special"}],
+            {"4": parlay_locked},
+        )
+        payload = build_sanitized_league_status(db, "999")
+        md = render_status_markdown(payload)
+        html = render_status_html(payload, md)
+
+        assert "Closed (Ticket Locked)" in md
+        assert "Closed (Ticket Locked)" in html
+
     @patch("sleeper_sync.fetch_sleeper_league_info", side_effect=ValueError("Sleeper league not found"))
     def test_raises_404_when_league_or_week_not_found(self, _mock_sleeper):
         db = self._mock_firestore(None, [], {})

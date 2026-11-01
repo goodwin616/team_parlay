@@ -532,7 +532,11 @@ def render_status_markdown(payload: Dict[str, Any]) -> str:
         if counts["submitted"] > 0
         else "—"
     )
-    kickoff_str = parlay["earliest_kickoff"] or "TBD (No legs submitted yet)"
+    kickoff_str = (
+        "Closed (Ticket Locked)"
+        if parlay["status"] == "locked"
+        else (parlay["earliest_kickoff"] or "TBD (No legs submitted yet)")
+    )
 
     lines = [
         f"# {payload['league_name']} — Week {payload['week']} Parlay Status ({payload['season']} Season)",
@@ -680,7 +684,7 @@ def render_status_html(payload: Dict[str, Any], markdown_text: str) -> str:
         </div>
         <div class="metric">
           <span class="metric-label">Submission Deadline</span>
-          <span class="metric-val">{esc(parlay['earliest_kickoff'] or 'TBD')}</span>
+          <span class="metric-val">{('Closed (Ticket Locked)' if parlay['status'] == 'locked' else esc(parlay['earliest_kickoff'] or 'TBD'))}</span>
         </div>
       </div>
     </header>

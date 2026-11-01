@@ -153,5 +153,15 @@ describe('SleeperChatExport Component & Text Generation', () => {
       expect(text).toContain('1. Philly Special (Blake): Saquon Barkley Anytime TD [-117 (54¢)]');
       expect(text).toContain('2. Gridiron Clowns (Bob): Chiefs Moneyline [-150 (60¢)]');
     });
+
+    it('outputs locked ticket status and hides submission deadline when parlay is locked', () => {
+      const lockedParlay: WeeklyParlay = {
+        ...activeParlay,
+        status: 'locked',
+      };
+      const text = generateSleeperText(lockedParlay);
+      expect(text).toContain('🔒 Ticket Status: LOCKED (Submissions closed)');
+      expect(text).not.toContain('⏳ Submission Deadline:');
+    });
   });
 });

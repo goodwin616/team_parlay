@@ -59,7 +59,11 @@ export function generateSleeperText(parlay: WeeklyParlay): string {
     lines.push('⚠️ Correlated Same-Game Combo legs included.');
   }
 
-  lines.push(`⏳ Submission Deadline: ${formattedKickoff}`);
+  if (parlay.status === 'locked') {
+    lines.push('🔒 Ticket Status: LOCKED (Submissions closed)');
+  } else if (parlay.earliest_kickoff) {
+    lines.push(`⏳ Submission Deadline: ${formattedKickoff}`);
+  }
   return lines.join('\n');
 }
 

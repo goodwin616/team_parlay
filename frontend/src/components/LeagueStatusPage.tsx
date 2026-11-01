@@ -179,7 +179,10 @@ export function renderStatusMarkdown(payload: SanitizedLeagueStatus): string {
     counts.submitted > 0
       ? `$${parlay.total_payout_dollars.toFixed(2)} total ($${parlay.payout_per_player_dollars.toFixed(2)} per submitted player)`
       : '—';
-  const kickoffStr = parlay.earliest_kickoff || 'TBD (No legs submitted yet)';
+  const kickoffStr =
+    parlay.status === 'locked'
+      ? 'Closed (Ticket Locked)'
+      : (parlay.earliest_kickoff || 'TBD (No legs submitted yet)');
 
   const lines: string[] = [
     `# ${payload.league_name} — Week ${payload.week} Parlay Status (${payload.season} Season)`,
@@ -329,8 +332,8 @@ export const LeagueStatusPage: React.FC<LeagueStatusPageProps> = ({
             </div>
             <div className="p-3 rounded-xl bg-sleeper-dark border border-sleeper-border/60">
               <span className="text-[10px] uppercase font-bold text-gray-400 block">Submission Deadline</span>
-              <span className="text-xs font-mono font-bold text-blue-300">
-                {parlay.earliest_kickoff || 'TBD'}
+              <span className={`text-xs font-mono font-bold ${parlay.status === 'locked' ? 'text-amber-400' : 'text-blue-300'}`}>
+                {parlay.status === 'locked' ? 'Closed (Locked)' : (parlay.earliest_kickoff || 'TBD')}
               </span>
             </div>
           </div>
