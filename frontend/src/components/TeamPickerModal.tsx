@@ -13,7 +13,7 @@ interface TeamPickerModalProps {
   currentUserId?: string;
   leagueId: string;
   season: string;
-  onTeamSelected: (rosterId: number, claimedBy?: any) => void;
+  onTeamSelected: (rosterId: number, claimedBy?: TeamProfile['claimed_by']) => void;
 }
 
 export function selectTeamInDemoMode({
@@ -24,7 +24,7 @@ export function selectTeamInDemoMode({
 }: {
   team: TeamProfile;
   currentUserId?: string;
-  onTeamSelected: (rosterId: number, claimedBy?: any) => void;
+  onTeamSelected: (rosterId: number, claimedBy?: TeamProfile['claimed_by']) => void;
   onClose: () => void;
 }): void {
   const demoClaimedBy = team.claimed_by || {
@@ -50,7 +50,7 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [confirmMode, setConfirmMode] = useState<'claim' | 'override'>('claim');
   const [pendingTeam, setPendingTeam] = useState<TeamProfile | null>(null);
-  const [pendingClaimedBy, setPendingClaimedBy] = useState<any>(null);
+  const [pendingClaimedBy, setPendingClaimedBy] = useState<TeamProfile['claimed_by'] | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,7 +78,7 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
     try {
       const selectTeamFn = httpsCallable<
         { league_id: string; season: string; roster_id: number; confirm: boolean },
-        { status: string; roster_id: number; claimed_by?: any }
+        { status: string; roster_id: number; claimed_by?: TeamProfile['claimed_by'] }
       >(functions, 'select_team');
 
       const res = await selectTeamFn({
@@ -142,16 +142,21 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="team-picker-title"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn"
+      >
         <div className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
           {/* Header */}
           <div className="flex justify-between items-center px-5 py-4 border-b border-sleeper-border shrink-0 bg-sleeper-dark/50">
             <div className="flex items-center space-x-2.5">
               <UserCheck className="w-5 h-5 text-sleeper-accent" />
               <div>
-                <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                <h2 id="team-picker-title" className="text-sm font-black text-white uppercase tracking-wider">
                   Select Your Fantasy Team
-                </h3>
+                </h2>
                 <p className="text-[11px] text-sleeper-muted">
                   Choose your team in this league
                 </p>
@@ -159,6 +164,7 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
             </div>
             <button
               type="button"
+              aria-label="Close"
               onClick={onClose}
               className="p-1 rounded-lg text-gray-400 hover:text-white transition cursor-pointer"
             >
@@ -186,6 +192,18 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
               return (
                 <div
                   key={t.roster_id}
+                  role={isClaimedByOther ? undefined : 'button'}
+                  tabIndex={isClaimedByOther ? undefined : 0}
+                  onKeyDown={
+                    isClaimedByOther
+                      ? undefined
+                      : (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            if (!isLoading) handleSelectTeam(t, false);
+                          }
+                        }
+                  }
                   onClick={() => !isLoading && handleSelectTeam(t, false)}
                   className={`flex items-center justify-between p-3 rounded-xl transition cursor-pointer ${
                     isSelected
@@ -270,7 +288,7 @@ export const TeamPickerModal: React.FC<TeamPickerModalProps> = ({
         onClose={() => setConfirmModalOpen(false)}
         mode={confirmMode}
         team={pendingTeam}
-        claimedBy={pendingClaimedBy}
+        claimedBy={pendingClaimedBy ?? undefined}
         loading={confirmLoading}
         onConfirm={() => {
           if (pendingTeam) {

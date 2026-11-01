@@ -71,7 +71,9 @@ describe('LeagueLandingPage Component', () => {
         'Lowest scorer places the bet. Everyone builds the slip. Track your league’s weekly parlay.'
       );
       expect(html).toContain('Enter Sleeper League ID or URL');
-      expect(html).toContain('id="league-id-input"');
+      expect(html).toContain('id="sleeper-league-id"');
+      expect(html).toContain('name="leagueId"');
+      expect(html).toContain('aria-label="Sleeper League ID"');
       expect(html).toContain('e.g. 1312915483992809472 or sleeper.com/leagues/...');
       expect(html).toContain('Open League Parlay');
     });
@@ -187,6 +189,9 @@ describe('LeagueLandingPage Component', () => {
       const inputWrapper = form.props.children[0];
       const errorTextElement = inputWrapper.props.children[2];
       expect(errorTextElement).not.toBeNull();
+      expect(errorTextElement.props.id).toBe('league-id-error');
+      expect(errorTextElement.props.role).toBe('alert');
+      expect(errorTextElement.props['aria-live']).toBe('polite');
       expect(errorTextElement.props.children).toBe(
         'Please enter a valid Sleeper League ID or Sleeper URL.'
       );

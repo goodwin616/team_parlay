@@ -72,6 +72,7 @@ describe('PlayerSearchInput Component', () => {
       // Search icon
       expect(html).toContain('lucide-search');
       // Clear button should not be present when query is empty
+      expect(html).not.toContain('aria-label="Clear selected player"');
       expect(html).not.toContain('aria-label="Clear search"');
     });
 
@@ -169,7 +170,7 @@ describe('PlayerSearchInput Component', () => {
 
       const clearButton = element.props.children[1].props.children[2];
       expect(clearButton).not.toBeNull();
-      expect(clearButton.props['aria-label']).toBe('Clear search');
+      expect(clearButton.props['aria-label']).toBe('Clear selected player');
       expect(clearButton.props.className).toContain('absolute right-3 top-3');
     });
 
@@ -243,6 +244,38 @@ describe('PlayerSearchInput Component', () => {
       expect(messageText).toContain(
         'No offensive NFL player found matching "Nonexistent Player".'
       );
+    });
+  });
+
+  describe('Accessibility & ARIA Attributes (F-10 / F-11)', () => {
+    it('provides correct combobox and listbox attributes', () => {
+      const { element } = renderPlayerSearchElement(
+        {
+          players: mockPlayers,
+          onSelectPlayer: () => {},
+          selectedPlayer: null,
+        },
+        { query: 'Bark', isOpen: true }
+      );
+
+      const input = element.props.children[1].props.children[0];
+      expect(input.props.role).toBe('combobox');
+      expect(input.props['aria-expanded']).toBe(true);
+      expect(input.props['aria-autocomplete']).toBe('list');
+      expect(input.props['aria-controls']).toBe('player-search-listbox');
+      expect(input.props['aria-label']).toBe('Search NFL players');
+
+      const clearButton = element.props.children[1].props.children[2];
+      expect(clearButton.props.type).toBe('button');
+      expect(clearButton.props['aria-label']).toBe('Clear selected player');
+
+      const dropdownList = element.props.children[2];
+      expect(dropdownList.props.id).toBe('player-search-listbox');
+      expect(dropdownList.props.role).toBe('listbox');
+
+      const item = dropdownList.props.children[0];
+      expect(item.props.role).toBe('option');
+      expect(item.props.type).toBe('button');
     });
   });
 });

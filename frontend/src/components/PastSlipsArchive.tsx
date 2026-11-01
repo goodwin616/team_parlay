@@ -85,6 +85,9 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
       className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 backdrop-blur-sm animate-fadeIn"
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="past-slips-title"
         onClick={(e) => e.stopPropagation()}
         className="bg-sleeper-card border border-sleeper-border rounded-2xl w-full max-w-lg sm:max-w-xl lg:max-w-2xl overflow-hidden shadow-2xl my-auto"
       >
@@ -93,7 +96,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
           <div className="flex items-center space-x-2">
             <History className="w-5 h-5 text-sleeper-accent" />
             <div>
-              <h3 className="text-base font-bold text-white">Past Kalshi Slips Archive</h3>
+              <h2 id="past-slips-title" className="text-base font-bold text-white">Past Kalshi Slips Archive</h2>
               <p className="text-[11px] text-sleeper-muted">Historical records • Graded via Kalshi settlement</p>
             </div>
           </div>
@@ -131,7 +134,16 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                 >
                   {/* Summary Bar / Accordion Header */}
                   <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
                     onClick={() => setExpandedWeek(isExpanded ? null : parlay.week)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setExpandedWeek(isExpanded ? null : parlay.week);
+                      }
+                    }}
                     className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.02] transition"
                   >
                     <div>
