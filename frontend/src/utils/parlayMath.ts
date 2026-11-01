@@ -22,14 +22,18 @@ export function decimalToAmerican(decimal: number): string {
 }
 
 export function kalshiCentsToDecimal(priceCents: number): number {
-  const clamped = Math.max(1, Math.min(99, priceCents));
+  if (priceCents <= 0) return 1.0;
+  const clamped = Math.min(99, priceCents);
   return Number((100.0 / clamped).toFixed(4));
 }
 
 export function decimalToKalshiCents(decimal: number): number {
   if (decimal <= 1.0) return 99;
-  const cents = Math.round(100.0 / decimal);
-  return Math.max(1, Math.min(99, cents));
+  const cents = 100.0 / decimal;
+  if (cents >= 1.0) {
+    return Math.max(1, Math.min(99, Math.round(cents)));
+  }
+  return Number(Math.max(0.0001, cents).toFixed(4));
 }
 
 export type OddsFormat = 'american' | 'percentage';
@@ -44,14 +48,20 @@ export function formatOddsWithCents(
   format?: OddsFormat
 ): string {
   const cents = priceCents ?? decimalToKalshiCents(americanToDecimal(oddsAmerican));
-  const roundedPct = Math.round(cents);
   if (format === 'percentage') {
-    return `${roundedPct}%`;
+    if (cents < 0.1) {
+      return '<0.1%';
+    }
+    if (cents < 10) {
+      return `${cents.toFixed(1)}%`;
+    }
+    return `${Math.round(cents)}%`;
   }
   if (format === 'american') {
     return `${oddsAmerican}`;
   }
-  return `${oddsAmerican} (${roundedPct}¢)`;
+  const centsDisplay = cents < 1 && cents > 0 ? `${cents.toFixed(1)}¢` : `${Math.round(cents)}¢`;
+  return `${oddsAmerican} (${centsDisplay})`;
 }
 
 export function formatComboOdds(
@@ -63,11 +73,17 @@ export function formatComboOdds(
   if (format === 'percentage') {
     if (multiplier > 1.0) {
       const exactPct = 100.0 / multiplier;
+      if (exactPct < 0.1) {
+        return '<0.1%';
+      }
       return exactPct < 10 ? `${exactPct.toFixed(1)}%` : `${Math.round(exactPct)}%`;
     }
     const fallbackPct =
       combinedProbabilityCents ?? decimalToKalshiCents(americanToDecimal(oddsAmerican));
-    return `${Math.round(fallbackPct)}%`;
+    if (fallbackPct < 0.1) {
+      return '<0.1%';
+    }
+    return fallbackPct < 10 ? `${fallbackPct.toFixed(1)}%` : `${Math.round(fallbackPct)}%`;
   }
   return oddsAmerican;
 }

@@ -180,6 +180,30 @@ def extract_kalshi_price_cents(market: Dict[str, Any], side: str = "yes") -> int
         val_cents = 54.0
     return max(1, min(99, int(round(val_cents))))
 
+def extract_kalshi_combo_price_cents(market: Dict[str, Any]) -> Optional[float]:
+    """
+    Extracts the YES price in cents for a combo market.
+    Supports sub-cent/fractional precision down to $0.0001 (0.01¢) without clamping to 1¢.
+    Returns None if no resting ask is available.
+    """
+    dollars_val = market.get("yes_ask_dollars")
+    if dollars_val is not None:
+        try:
+            val_cents = float(dollars_val) * 100.0
+            if 0.0 < val_cents < 100.0:
+                return round(val_cents, 4)
+        except (ValueError, TypeError):
+            pass
+    ask_val = market.get("yes_ask")
+    if ask_val is not None:
+        try:
+            val_cents = float(ask_val)
+            if 0.0 < val_cents < 100.0:
+                return round(val_cents, 4)
+        except (ValueError, TypeError):
+            pass
+    return None
+
 class KalshiTradingBlockedError(RuntimeError):
     """Raised when code attempts a Kalshi request that could result in a trade."""
 
@@ -710,19 +734,12 @@ class KalshiApiClient:
 
                 if combo_ticker:
                     # 1. Check if market already has resting liquidity on the public book
-                    try:
-                        live_ask = float(market_obj.get("yes_ask_dollars") or 0)
-                    except (TypeError, ValueError):
-                        live_ask = 0.0
-
-                    combo_cents: Optional[int] = None
-                    if 0.0 < live_ask < 1.0:
-                        combo_cents = extract_kalshi_price_cents(market_obj, "yes")
-                    else:
+                    combo_cents: Optional[float] = extract_kalshi_combo_price_cents(market_obj)
+                    if combo_cents is None:
                         # 2. No resting orderbook: request live quotes from market makers via RFQ
                         rfq_cents = self.request_rfq_combo_cents(combo_ticker, timeout_seconds=3.0)
-                        if rfq_cents is not None:
-                            combo_cents = max(1, min(99, int(round(rfq_cents))))
+                        if rfq_cents is not None and 0.0 < rfq_cents < 100.0:
+                            combo_cents = round(float(rfq_cents), 4)
 
                     if combo_cents is not None:
                         multiplier = kalshi_cents_to_decimal(combo_cents)

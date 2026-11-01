@@ -35,7 +35,14 @@ def test_kalshi_cents_conversions():
 
     assert decimal_to_kalshi_cents(2.0) == 50
     assert decimal_to_kalshi_cents(2.5) == 40
+    assert decimal_to_kalshi_cents(200.0) == 0.5
     assert format_odds_with_cents("-117", 54) == "-117 (54¢)"
+
+def test_kalshi_sub_cent_and_high_odds():
+    assert kalshi_cents_to_decimal(0.5) == 200.0
+    assert kalshi_cents_to_american(0.5) == "+19900"
+    assert kalshi_cents_to_decimal(0.25) == 400.0
+    assert kalshi_cents_to_american(0.25) == "+39900"
 
 def test_calculate_parlay_standard_and_kalshi_cents():
     legs = [
