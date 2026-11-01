@@ -18,19 +18,41 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const functions = getFunctions(app);
 
+export const isEmulatorMode =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+  import.meta.env.VITE_USE_PRODUCTION_FIREBASE !== 'true';
+
 export const analyticsPromise: Promise<Analytics | null> =
-  typeof window !== 'undefined'
+  typeof window !== 'undefined' && !isEmulatorMode
     ? isSupported()
         .then((supported) => (supported ? getAnalytics(app) : null))
         .catch(() => null)
     : Promise.resolve(null);
 
-export async function logAnalyticsEvent(eventName: string, eventParams?: Record<string, any>): Promise<void> {
+export async function dispatchAnalyticsEvent(
+  analyticsInstance: Analytics | null,
+  eventName: string,
+  eventParams?: Record<string, any>,
+  logger: typeof logEvent = logEvent
+): Promise<void> {
+  try {
+    if (analyticsInstance) {
+      logger(analyticsInstance, eventName, eventParams);
+    }
+  } catch {
+    // Fail-safe: analytics logging should never crash user actions
+  }
+}
+
+export async function logAnalyticsEvent(
+  eventName: string,
+  eventParams?: Record<string, any>,
+  logger: typeof logEvent = logEvent
+): Promise<void> {
   try {
     const analytics = await analyticsPromise;
-    if (analytics) {
-      logEvent(analytics, eventName, eventParams);
-    }
+    await dispatchAnalyticsEvent(analytics, eventName, eventParams, logger);
   } catch {
     // Fail-safe: analytics logging should never crash user actions
   }
@@ -38,12 +60,7 @@ export async function logAnalyticsEvent(eventName: string, eventParams?: Record<
 
 let emulatorsConnected = false;
 
-if (
-  !emulatorsConnected &&
-  typeof window !== 'undefined' &&
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
-  import.meta.env.VITE_USE_PRODUCTION_FIREBASE !== 'true'
-) {
+if (!emulatorsConnected && isEmulatorMode) {
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
   connectFunctionsEmulator(functions, '127.0.0.1', 5001);
   connectAuthEmulator(auth, 'http://127.0.0.1:9099');
