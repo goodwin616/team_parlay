@@ -235,7 +235,12 @@ def settle_unfinalized_parlays(
             if not is_eligible:
                 continue
 
-            if settlement_status == "finalized":
+            has_pending_ticker_leg = any(
+                bool(leg.get("kalshi_market_ticker"))
+                and str(leg.get("outcome") or "").strip().lower() == "pending"
+                for leg in data.get("legs", [])
+            )
+            if settlement_status == "finalized" and not has_pending_ticker_leg:
                 continue
 
             if week < current_week and status == "open":

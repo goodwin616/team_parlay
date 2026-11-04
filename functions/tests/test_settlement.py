@@ -422,6 +422,61 @@ class TestSettleUnfinalizedParlays:
         assert update_args["settlement_status"] == "pending"
         assert update_args["legs"][0]["outcome"] == "won"
 
+    def test_regrades_prematurely_finalized_parlay_with_pending_ticker_legs(self):
+        mock_db = MagicMock()
+        mock_parlays_coll = mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value.collection.return_value
+
+        doc_week8 = MagicMock()
+        doc_week8.id = "8"
+        doc_week8.to_dict.return_value = {
+            "week": 8,
+            "status": "lost",
+            "outcome": "lost",
+            "settlement_status": "finalized",
+            "estimated_payout": 100.0,
+            "legs": [
+                {
+                    "roster_id": 3,
+                    "kalshi_market_ticker": "KXNFLREC-26NOV01LVNYJ-NYJKSADIQ16-2",
+                    "kalshi_side": "yes",
+                    "status": "submitted",
+                    "outcome": "lost",
+                },
+                {
+                    "roster_id": 10,
+                    "kalshi_market_ticker": "KXNFLTD-26NOV01PHIWAS-WASAWILLIAMS14-1",
+                    "kalshi_side": "yes",
+                    "status": "submitted",
+                    "outcome": "pending",
+                },
+                {
+                    "roster_id": 2,
+                    "status": "pending",
+                    "description": "",
+                    "outcome": "pending",
+                },
+            ],
+        }
+
+        mock_parlays_coll.stream.return_value = [doc_week8]
+
+        def fetcher(ticker):
+            return {"status": "finalized", "result": "no"}
+
+        results = settle_unfinalized_parlays(
+            mock_db,
+            league_id="1312915483992809472",
+            season="2026",
+            current_week=9,
+            kalshi_fetcher_fn=fetcher,
+        )
+
+        assert len(results) == 1
+        assert results[0]["legs"][0]["outcome"] == "lost"
+        assert results[0]["legs"][1]["outcome"] == "lost"
+        assert results[0]["settlement_status"] == "finalized"
+        doc_week8.reference.update.assert_called_once()
+
 
 class TestInitOrSyncLeagueIntegration:
     def test_init_or_sync_calls_settle_unfinalized_parlays(self):

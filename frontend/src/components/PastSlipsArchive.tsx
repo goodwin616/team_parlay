@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
 import { History, X, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
-import { WeeklyParlay } from '../types';
+import { WeeklyParlay, ParlayLeg } from '../types';
 import { formatOddsWithCents } from '../utils/parlayMath';
+
+export function isSubmittedArchiveLeg(leg: ParlayLeg): boolean {
+  if (leg.kalshi_market_ticker) return true;
+  if (!leg.description || leg.description === 'Must submit own pick before kickoff') {
+    return false;
+  }
+  return leg.status !== 'pending';
+}
 
 interface Props {
   isOpen: boolean;
@@ -120,6 +128,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
           ) : (
             pastParlays.map((parlay) => {
               const isExpanded = expandedWeek === parlay.week;
+              const submittedLegs = parlay.legs.filter(isSubmittedArchiveLeg);
               const multiplier =
                 parlay.actual_multiplier ??
                 parlay.estimated_multiplier ??
@@ -157,7 +166,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                         </span>
                       </div>
                       <div className="text-[11px] text-gray-400 mt-0.5">
-                        {parlay.legs.length} legs • Odds: {parlay.actual_odds_american || parlay.estimated_odds_american}
+                        {submittedLegs.length} legs • Odds: {parlay.actual_odds_american || parlay.estimated_odds_american}
                         {multiplier != null && !Number.isNaN(multiplier) ? ` • ${multiplier.toFixed(1)}x` : ''}
                       </div>
                     </div>
@@ -183,7 +192,7 @@ export const PastSlipsArchive: React.FC<Props> = ({ isOpen, onClose, pastParlays
                   {isExpanded && (
                     <div className="border-t border-sleeper-border/70 p-3 bg-sleeper-card/40 space-y-2">
                       <div className="divide-y divide-sleeper-border/40">
-                        {parlay.legs.map((leg, i) => (
+                        {submittedLegs.map((leg, i) => (
                           <div key={leg.id || i} className="py-2 flex items-center justify-between text-xs">
                             <div className="min-w-0 pr-2">
                               <div className="flex items-center space-x-1.5 flex-wrap">

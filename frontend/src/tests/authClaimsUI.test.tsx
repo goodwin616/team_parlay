@@ -758,6 +758,20 @@ describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
       expect(evalCurrent.pastParlays[0].week).toBe(8);
       expect(evalCurrent.pastParlays[0].status).toBe('locked');
       expect(evalCurrent.hasUnfinalizedSubmittedParlays).toBe(true);
+
+      // Case 3: Prematurely finalized Week 8 parlay where a leg with kalshi_market_ticker still has outcome === 'pending'
+      const prematurelyFinalizedWeek8: WeeklyParlay = {
+        ...week8FirestoreDoc,
+        settlement_status: 'finalized',
+        legs: [
+          {
+            ...week8FirestoreDoc.legs[0],
+            outcome: 'pending',
+          },
+        ],
+      };
+      const evalPremature = evaluateParlaysSnapshot([week9FirestoreDoc, prematurelyFinalizedWeek8], 9);
+      expect(evalPremature.hasUnfinalizedSubmittedParlays).toBe(true);
     });
   });
 });

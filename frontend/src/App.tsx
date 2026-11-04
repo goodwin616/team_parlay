@@ -565,8 +565,11 @@ export function evaluateParlaysSnapshot(
 
   const hasUnfinalizedSubmittedParlays = sorted.some(
     (p) =>
-      p.settlement_status !== 'finalized' &&
-      p.legs?.some((l) => l.status !== 'pending' || Boolean(l.kalshi_market_ticker))
+      (p.settlement_status !== 'finalized' &&
+        p.legs?.some((l) => l.status !== 'pending' || Boolean(l.kalshi_market_ticker))) ||
+      p.legs?.some(
+        (l) => Boolean(l.kalshi_market_ticker) && l.outcome === 'pending'
+      )
   );
 
   if (isBehindLiveWeek) {

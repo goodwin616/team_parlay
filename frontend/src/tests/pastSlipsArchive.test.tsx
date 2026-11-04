@@ -491,6 +491,79 @@ describe('PastSlipsArchive Component', () => {
       // CR-034: No redundant inline status chips next to team name
       expect(html).not.toMatch(/>\s*submitted\s*</);
     });
+
+    it('filters out unsubmitted pending/empty manager slots from archived slip leg count and leg list', () => {
+      const week8Parlay: WeeklyParlay = {
+        week: 8,
+        season: '2026',
+        status: 'lost',
+        outcome: 'lost',
+        settlement_status: 'finalized',
+        contains_sgp: true,
+        bettor: { roster_id: 8, team_name: 'WNBA YoungBoy', owner_name: 'Shishkasabs', points_last_week: 123.3 },
+        earliest_kickoff: '2026-11-01T18:00:00Z',
+        legs: [
+          {
+            id: 'l_10',
+            roster_id: 10,
+            team_name: 'LeGron James',
+            owner_name: 'Superclif',
+            nfl_team: 'WAS',
+            description: 'Antonio Williams (WAS) • 1+ touchdowns (YES)',
+            odds_american: '+317',
+            odds_decimal: 4.17,
+            price_cents: 24,
+            kalshi_market_ticker: 'KXNFLTD-26NOV01PHIWAS-WASAWILLIAMS14-1',
+            kalshi_side: 'yes',
+            status: 'submitted',
+            outcome: 'lost',
+          },
+          {
+            id: 'l_2',
+            roster_id: 2,
+            team_name: 'Livin LaPorta Loca',
+            owner_name: 'jaegerseisster',
+            nfl_team: 'NFL',
+            description: '',
+            odds_american: '-110',
+            odds_decimal: 1.91,
+            status: 'pending',
+            outcome: 'pending',
+          },
+          {
+            id: 'l_6',
+            roster_id: 6,
+            team_name: 'The Humongous Melonheads',
+            owner_name: 'jmeloro',
+            nfl_team: 'NFL',
+            description: 'Must submit own pick before kickoff',
+            odds_american: '-110',
+            odds_decimal: 1.91,
+            status: 'pending',
+            outcome: 'pending',
+          },
+        ],
+        estimated_odds_american: '+317',
+        estimated_multiplier: 4.17,
+        estimated_payout: 20.85,
+        actual_payout: 0.0,
+      };
+
+      const html = cleanText(
+        renderToString(
+          <PastSlipsArchive isOpen={true} onClose={() => {}} pastParlays={[week8Parlay]} />
+        )
+      );
+
+      // Should show 1 submitted leg, not 3 legs
+      expect(html).toContain('1 legs • Odds: +317');
+      expect(html).toContain('Antonio Williams (WAS) • 1+ touchdowns (YES)');
+      expect(html).toContain('MISS');
+      // Should NOT render unsubmitted managers or their PENDING badges
+      expect(html).not.toContain('Livin LaPorta Loca');
+      expect(html).not.toContain('The Humongous Melonheads');
+      expect(html).not.toContain('PENDING');
+    });
   });
 
   describe('Closing Actions', () => {
