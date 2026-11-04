@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderToString } from 'react-dom/server';
-import { PickModal } from '../components/PickModal';
-import { ActivePlayer, ParlayLeg } from '../types';
+import { PickModal, resolveGameLineKalshiSide } from '../components/PickModal';
+import { ActivePlayer, ParlayLeg, GameLineOption } from '../types';
 
 describe('PickModal Prop Selection Behavior (CR-002)', () => {
   const dummyPlayer: ActivePlayer = {
@@ -225,6 +225,58 @@ describe('PickModal Prop Selection Behavior (CR-002)', () => {
       // Default tab is player props
       expect(html).toContain('aria-selected="true"');
       expect(html).toContain('aria-selected="false"');
+    });
+  });
+
+  describe('Game Line Kalshi Side Resolution', () => {
+    const realKalshiGameLine: GameLineOption = {
+      game_id: '26NOV01BUFNYJ',
+      away_team: 'BUF',
+      home_team: 'NYJ',
+      commence_time: '2026-11-01T17:00:00Z',
+      spread_away: {
+        point: -3.5,
+        odds: '-110',
+        price_cents: 52,
+        market_ticker: 'KXNFLSPREAD-26NOV01BUFNYJ-BUF3',
+      },
+      spread_home: {
+        point: 3.5,
+        odds: '-110',
+        price_cents: 48,
+        market_ticker: 'KXNFLSPREAD-26NOV01BUFNYJ-BUF3',
+      },
+      total_over: {
+        point: 45.5,
+        odds: '-110',
+        price_cents: 52,
+        market_ticker: 'KXNFLTOTAL-26NOV01BUFNYJ-45',
+      },
+      total_under: {
+        point: 45.5,
+        odds: '-110',
+        price_cents: 48,
+        market_ticker: 'KXNFLTOTAL-26NOV01BUFNYJ-45',
+      },
+      ml_away: {
+        odds: '-180',
+        price_cents: 64,
+        market_ticker: 'KXNFLGAME-26NOV01BUFNYJ-BUF',
+      },
+      ml_home: {
+        odds: '+155',
+        price_cents: 36,
+        market_ticker: 'KXNFLGAME-26NOV01BUFNYJ-NYJ',
+      },
+    };
+
+    it('resolves total_under and underdog spread on shared Kalshi tickers to "no" side', () => {
+      expect(resolveGameLineKalshiSide('total_over', realKalshiGameLine)).toBe('yes');
+      expect(resolveGameLineKalshiSide('total_under', realKalshiGameLine)).toBe('no');
+      expect(resolveGameLineKalshiSide('spread_away', realKalshiGameLine)).toBe('yes');
+      expect(resolveGameLineKalshiSide('spread_home', realKalshiGameLine)).toBe('no');
+      expect(resolveGameLineKalshiSide('moneyline_away', realKalshiGameLine)).toBe('yes');
+      expect(resolveGameLineKalshiSide('moneyline_home', realKalshiGameLine)).toBe('yes');
     });
   });
 });

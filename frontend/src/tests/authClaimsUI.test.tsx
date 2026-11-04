@@ -4,7 +4,13 @@ import { SignInGate } from '../components/SignInGate';
 import { ClaimConfirmModal } from '../components/ClaimConfirmModal';
 import { TeamPickerModal } from '../components/TeamPickerModal';
 import { ParlayCard } from '../components/ParlayCard';
-import { resolveUserTeam, handleTeamsSnapshot } from '../App';
+import {
+  resolveUserTeam,
+  handleTeamsSnapshot,
+  shouldFetchLiveNflState,
+  resolveSyncedParlayState,
+  evaluateParlaysSnapshot,
+} from '../App';
 import { WeeklyParlay, TeamProfile } from '../types';
 
 describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
@@ -622,6 +628,136 @@ describe('CR-007b UI: Google Auth, Claims & Audit indicators', () => {
       cleanup();
       expect(unsubscriptionsCalled).toBe(2);
       expect(activeListeners).toBe(0);
+    });
+
+    it('shouldFetchLiveNflState returns true on main league page and false on status route or demo mode', () => {
+      expect(shouldFetchLiveNflState(false, false)).toBe(true);
+      expect(shouldFetchLiveNflState(false, true)).toBe(false);
+      expect(shouldFetchLiveNflState(true, false)).toBe(false);
+    });
+
+    it('resolveSyncedParlayState advances from Week 8 to Week 9 even when Week 8 has submitted legs, archiving Week 8 as locked', () => {
+      const week8Parlay: WeeklyParlay = {
+        week: 8,
+        season: '2026',
+        status: 'open',
+        contains_sgp: false,
+        bettor: { roster_id: 1, team_name: 'Philly Special', owner_name: 'Blake', points_last_week: 90 },
+        earliest_kickoff: null,
+        isRealDataLoaded: true,
+        estimated_odds_american: '+100',
+        estimated_multiplier: 2.0,
+        estimated_payout: 10.0,
+        actual_payout: null,
+        legs: [
+          {
+            id: '12345_w8_r1',
+            roster_id: 1,
+            team_name: 'Philly Special',
+            owner_name: 'Blake',
+            nfl_team: 'PHI',
+            description: 'Saquon Barkley Anytime TD',
+            odds_american: '-115',
+            odds_decimal: 1.87,
+            status: 'submitted',
+            outcome: 'won',
+          },
+        ],
+      };
+
+      const week9FreshParlay: WeeklyParlay = {
+        week: 9,
+        season: '2026',
+        status: 'open',
+        contains_sgp: false,
+        bettor: { roster_id: 2, team_name: 'Gridiron Clowns', owner_name: 'Bob', points_last_week: 75 },
+        earliest_kickoff: null,
+        isRealDataLoaded: true,
+        estimated_odds_american: '+100',
+        estimated_multiplier: 1.0,
+        estimated_payout: 5.0,
+        actual_payout: null,
+        legs: [
+          {
+            id: '12345_w9_r1',
+            roster_id: 1,
+            team_name: 'Philly Special',
+            owner_name: 'Blake',
+            nfl_team: '',
+            description: '',
+            odds_american: '-110',
+            odds_decimal: 1.91,
+            status: 'pending',
+          },
+        ],
+      };
+
+      const result = resolveSyncedParlayState(week8Parlay, week9FreshParlay, [], '12345');
+      expect(result.activeParlay.week).toBe(9);
+      expect(result.pastParlays.length).toBe(1);
+      expect(result.pastParlays[0].week).toBe(8);
+      expect(result.pastParlays[0].status).toBe('locked');
+      expect(result.pastParlays[0].legs[0].outcome).toBe('won');
+    });
+
+    it('evaluateParlaysSnapshot prevents stale Week 8 snapshot from overwriting active Week 9 and flags settlement sync for unfinalized submitted legs', () => {
+      const week8FirestoreDoc: WeeklyParlay = {
+        week: 8,
+        season: '2026',
+        status: 'open',
+        settlement_status: 'pending',
+        contains_sgp: false,
+        bettor: { roster_id: 1, team_name: 'Philly Special', owner_name: 'Blake', points_last_week: 90 },
+        earliest_kickoff: null,
+        estimated_odds_american: '+100',
+        estimated_multiplier: 2.0,
+        estimated_payout: 10.0,
+        actual_payout: null,
+        legs: [
+          {
+            id: '12345_w8_r1',
+            roster_id: 1,
+            team_name: 'Philly Special',
+            owner_name: 'Blake',
+            nfl_team: 'PHI',
+            description: 'Saquon Barkley Anytime TD',
+            odds_american: '-115',
+            odds_decimal: 1.87,
+            status: 'submitted',
+            kalshi_market_ticker: 'KXNFLTD-1',
+          },
+        ],
+      };
+
+      // Case 1: Firestore only has Week 8, but liveWeek is 9
+      const evalStale = evaluateParlaysSnapshot([week8FirestoreDoc], 9);
+      expect(evalStale.isBehindLiveWeek).toBe(true);
+      expect(evalStale.activeParlay).toBeNull();
+      expect(evalStale.pastParlays.length).toBe(1);
+      expect(evalStale.pastParlays[0].week).toBe(8);
+      expect(evalStale.pastParlays[0].status).toBe('locked');
+      expect(evalStale.hasUnfinalizedSubmittedParlays).toBe(true);
+
+      // Case 2: Firestore has both Week 9 and Week 8
+      const week9FirestoreDoc: WeeklyParlay = {
+        ...week8FirestoreDoc,
+        week: 9,
+        legs: [
+          {
+            ...week8FirestoreDoc.legs[0],
+            id: '12345_w9_r1',
+            status: 'pending',
+            kalshi_market_ticker: undefined,
+          },
+        ],
+      };
+      const evalCurrent = evaluateParlaysSnapshot([week9FirestoreDoc, week8FirestoreDoc], 9);
+      expect(evalCurrent.isBehindLiveWeek).toBe(false);
+      expect(evalCurrent.activeParlay?.week).toBe(9);
+      expect(evalCurrent.pastParlays.length).toBe(1);
+      expect(evalCurrent.pastParlays[0].week).toBe(8);
+      expect(evalCurrent.pastParlays[0].status).toBe('locked');
+      expect(evalCurrent.hasUnfinalizedSubmittedParlays).toBe(true);
     });
   });
 });

@@ -36,6 +36,44 @@ export interface PickData {
   game_id?: string;
 }
 
+export function resolveGameLineKalshiSide(
+  lineType:
+    | "spread_away"
+    | "spread_home"
+    | "ml_away"
+    | "ml_home"
+    | "moneyline_away"
+    | "moneyline_home"
+    | "total_over"
+    | "total_under",
+  game: {
+    spread_away: { point: number; market_ticker?: string };
+    spread_home: { point: number; market_ticker?: string };
+    total_over: { market_ticker?: string };
+    total_under: { market_ticker?: string };
+  }
+): "yes" | "no" {
+  if (lineType === "total_under") {
+    const ticker = (game.total_under.market_ticker || "").toUpperCase();
+    if (!ticker.endsWith("-U")) {
+      return "no";
+    }
+    return "yes";
+  }
+  if (lineType === "spread_away" || lineType === "spread_home") {
+    const selectedSpread =
+      lineType === "spread_away" ? game.spread_away : game.spread_home;
+    const sharedTicker =
+      Boolean(game.spread_away.market_ticker) &&
+      game.spread_away.market_ticker === game.spread_home.market_ticker;
+    if (sharedTicker && selectedSpread.point > 0) {
+      return "no";
+    }
+    return "yes";
+  }
+  return "yes";
+}
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -1023,7 +1061,9 @@ export const PickModal: React.FC<Props> = ({
   } else {
     previewGameId = selectedGame?.game_id;
     previewKickoff = selectedGame?.commence_time;
-    previewSide = "yes";
+    previewSide = selectedGame
+      ? resolveGameLineKalshiSide(mainlineType, selectedGame)
+      : "yes";
     if (selectedGame) {
       if (mainlineType === "spread_away") {
         const pt =

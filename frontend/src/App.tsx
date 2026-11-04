@@ -492,6 +492,110 @@ export async function submitPickToParlay({
   return { updatedParlay, newLeg, calledSubmitFn: false };
 }
 
+export function shouldFetchLiveNflState(isDemo: boolean, isStatusRoute: boolean): boolean {
+  return !isDemo && !isStatusRoute;
+}
+
+export function resolveSyncedParlayState(
+  prev: WeeklyParlay,
+  freshParlay: WeeklyParlay,
+  prevPastParlays: WeeklyParlay[],
+  builtTeamsOrLeagueId?: Array<{ roster_id: number }> | string
+): { activeParlay: WeeklyParlay; pastParlays: WeeklyParlay[] } {
+  const isPrevDemo = prev.legs.some((l) => l.id === 'l1' && l.owner_name === 'Blake');
+  const teamsMatch = Array.isArray(builtTeamsOrLeagueId)
+    ? prev.legs.every((l) => builtTeamsOrLeagueId.some((t) => t.roster_id === l.roster_id))
+    : true;
+
+  const isSameWeekWithSubmissions =
+    !isPrevDemo &&
+    Boolean(prev.isRealDataLoaded) &&
+    prev.week === freshParlay.week &&
+    prev.legs.length > 0 &&
+    prev.legs.some((l) => l.status !== 'pending') &&
+    teamsMatch;
+
+  if (isSameWeekWithSubmissions) {
+    return {
+      activeParlay: { ...prev, isRealDataLoaded: true },
+      pastParlays: prevPastParlays,
+    };
+  }
+
+  let nextPastParlays = prevPastParlays;
+  if (
+    !isPrevDemo &&
+    Boolean(prev.isRealDataLoaded) &&
+    prev.legs.length > 0 &&
+    prev.week > 0 &&
+    prev.week < freshParlay.week &&
+    teamsMatch
+  ) {
+    const archivedPrev: WeeklyParlay = {
+      ...prev,
+      status: prev.status === 'open' ? 'locked' : prev.status,
+    };
+    const exists = prevPastParlays.some((p) => p.week === archivedPrev.week);
+    nextPastParlays = exists
+      ? prevPastParlays.map((p) => (p.week === archivedPrev.week ? archivedPrev : p))
+      : [archivedPrev, ...prevPastParlays].sort((a, b) => b.week - a.week);
+  }
+
+  return {
+    activeParlay: freshParlay,
+    pastParlays: nextPastParlays,
+  };
+}
+
+export function evaluateParlaysSnapshot(
+  allParlays: WeeklyParlay[],
+  liveWeek: number | null
+): {
+  isBehindLiveWeek: boolean;
+  activeParlay: WeeklyParlay | null;
+  pastParlays: WeeklyParlay[];
+  highestParlayWeek: number;
+  hasUnfinalizedSubmittedParlays: boolean;
+} {
+  const sorted = [...allParlays].sort((a, b) => b.week - a.week);
+  const highestParlayWeek = sorted[0]?.week || 0;
+  const isBehindLiveWeek = Boolean(
+    liveWeek && highestParlayWeek > 0 && highestParlayWeek < liveWeek
+  );
+
+  const hasUnfinalizedSubmittedParlays = sorted.some(
+    (p) =>
+      p.settlement_status !== 'finalized' &&
+      p.legs?.some((l) => l.status !== 'pending' || Boolean(l.kalshi_market_ticker))
+  );
+
+  if (isBehindLiveWeek) {
+    const lockedPast = sorted.map((p) =>
+      p.status === 'open' ? ({ ...p, status: 'locked' } as WeeklyParlay) : p
+    );
+    return {
+      isBehindLiveWeek: true,
+      activeParlay: null,
+      pastParlays: lockedPast,
+      highestParlayWeek,
+      hasUnfinalizedSubmittedParlays,
+    };
+  }
+
+  const active = sorted[0] || null;
+  const past = sorted
+    .filter((p) => p.week !== active?.week)
+    .map((p) => (p.status === 'open' ? ({ ...p, status: 'locked' } as WeeklyParlay) : p));
+
+  return {
+    isBehindLiveWeek: false,
+    activeParlay: active,
+    pastParlays: past,
+    highestParlayWeek,
+    hasUnfinalizedSubmittedParlays,
+  };
+}
+
 export const App: React.FC = () => {
   const { user, loading: authLoading } = useAuthUser();
 
@@ -589,7 +693,9 @@ export const App: React.FC = () => {
   const [leagueError, setLeagueError] = useState<string | null>(null);
   const syncedLeagueRef = useRef<string | null>(null);
   const currentStoredWeekRef = useRef<number | null>(null);
+  const highestParlayWeekRef = useRef<number | null>(null);
   const liveNflWeekRef = useRef<number | null>(null);
+  const settledSyncKeyRef = useRef<string | null>(null);
 
   // Modals & Live Kalshi / Sleeper Player Board State
   const [isPickOpen, setIsPickOpen] = useState(false);
@@ -1055,16 +1161,20 @@ export const App: React.FC = () => {
         };
 
         setParlay((prev) => {
-          const isPrevDemo = prev.legs.some((l) => l.id === 'l1' && l.owner_name === 'Blake');
-          const hasSubmittedForThisLeague =
-            !isPrevDemo &&
-            Boolean(prev.isRealDataLoaded) &&
-            prev.legs.length > 0 &&
-            prev.legs.some((l) => l.status === 'submitted') &&
-            prev.legs.every((l) => builtTeams.some((t) => t.roster_id === l.roster_id));
-          return hasSubmittedForThisLeague
-            ? { ...prev, isRealDataLoaded: true }
-            : freshParlay;
+          const resolved = resolveSyncedParlayState(prev, freshParlay, [], builtTeams);
+          if (resolved.pastParlays.length > 0) {
+            setPastParlays((prevPast) => {
+              const merged = [...prevPast];
+              for (const archived of resolved.pastParlays) {
+                const idx = merged.findIndex((p) => p.week === archived.week);
+                if (idx === -1) {
+                  merged.push(archived);
+                }
+              }
+              return merged.sort((a, b) => b.week - a.week);
+            });
+          }
+          return resolved.activeParlay;
         });
         setIsLoadingLeague(false);
 
@@ -1098,7 +1208,7 @@ export const App: React.FC = () => {
     let isSubscribed = true;
 
     // Check live NFL week directly from Sleeper so transitions to a new week are caught immediately
-    if (!isDemo && statusRoute.isStatusRoute) {
+    if (shouldFetchLiveNflState(isDemo, statusRoute.isStatusRoute)) {
       fetch('https://api.sleeper.app/v1/state/nfl')
         .then((res) => (res.ok ? res.json() : null))
         .then((nflState) => {
@@ -1106,11 +1216,13 @@ export const App: React.FC = () => {
           const liveWeek = Number(nflState.week);
           liveNflWeekRef.current = liveWeek;
 
-          const highestKnownWeek = Math.max(
-            currentStoredWeekRef.current || 0,
-            parlayRef.current?.week || 0
-          );
-          if (highestKnownWeek > 0 && highestKnownWeek < liveWeek) {
+          const storedLeagueWeek = currentStoredWeekRef.current || 0;
+          const storedParlayWeek = highestParlayWeekRef.current || 0;
+          const isStoredBehind =
+            (storedLeagueWeek > 0 && storedLeagueWeek < liveWeek) ||
+            (storedParlayWeek > 0 && storedParlayWeek < liveWeek);
+
+          if (isStoredBehind) {
             const weekSyncKey = `${leagueId}_week_${liveWeek}_${authKey}`;
             if (syncedLeagueRef.current !== weekSyncKey) {
               syncedLeagueRef.current = weekSyncKey;
@@ -1224,21 +1336,24 @@ export const App: React.FC = () => {
         }
 
         const allParlays = snapshot.docs
-          .map(d => d.data() as WeeklyParlay)
+          .map((d) => d.data() as WeeklyParlay)
           .sort((a, b) => b.week - a.week);
 
         const liveWeek = liveNflWeekRef.current;
-        const highestParlayWeek = allParlays[0]?.week || 0;
-        if (!isDemo && !statusRoute.isStatusRoute && liveWeek && highestParlayWeek > 0 && highestParlayWeek < liveWeek) {
+        const evalResult = evaluateParlaysSnapshot(allParlays, liveWeek);
+        highestParlayWeekRef.current = evalResult.highestParlayWeek;
+
+        if (!isDemo && !statusRoute.isStatusRoute && evalResult.isBehindLiveWeek && liveWeek) {
+          setPastParlays(evalResult.pastParlays);
           const weekSyncKey = `${leagueId}_week_${liveWeek}_${authKey}`;
           if (syncedLeagueRef.current !== weekSyncKey) {
             syncedLeagueRef.current = weekSyncKey;
             syncRealSleeperLeague(true);
-            return;
           }
+          return;
         }
 
-        const active = allParlays.find(p => p.status === 'open') || allParlays[0];
+        const active = evalResult.activeParlay;
         const isStaleMockParlay =
           !isDemo &&
           active?.legs?.some(
@@ -1248,11 +1363,27 @@ export const App: React.FC = () => {
           return;
         }
 
-        const past = allParlays.filter(p => p.week !== active.week);
-
         if (active) setParlay({ ...active, isRealDataLoaded: true });
-        setPastParlays(past);
+        setPastParlays(evalResult.pastParlays);
         setIsLoadingLeague(false);
+
+        if (
+          !isDemo &&
+          !statusRoute.isStatusRoute &&
+          user &&
+          evalResult.hasUnfinalizedSubmittedParlays
+        ) {
+          const settleKey = `${leagueId}_settle_${season}_w${evalResult.highestParlayWeek}_${authKey}`;
+          if (settledSyncKeyRef.current !== settleKey) {
+            settledSyncKeyRef.current = settleKey;
+            const initFn = httpsCallable(functions, 'init_or_sync_league');
+            initFn({
+              league_id: leagueId,
+              season,
+              force_sync: false,
+            }).catch(() => {});
+          }
+        }
       },
       () => {}
     );

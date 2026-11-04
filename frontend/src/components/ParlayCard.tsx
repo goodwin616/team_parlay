@@ -89,7 +89,7 @@ export const ParlayCard: React.FC<Props> = ({
     };
   }, [parlay.earliest_kickoff]);
 
-  const submittedCount = parlay.legs.filter(l => l.status === 'submitted').length;
+  const submittedCount = parlay.legs.filter(l => l.status !== 'pending').length;
   const isOfficialQuote = Boolean(parlay.actual_payout || parlay.actual_odds_american);
   const hasSubmittedLegs = submittedCount > 0 || isOfficialQuote;
   const totalPayout = parlay.actual_payout ?? parlay.estimated_payout;
@@ -346,10 +346,20 @@ export const ParlayCard: React.FC<Props> = ({
       <div className="divide-y divide-sleeper-border/60">
         {orderedLegs.map((leg, index) => {
           const isCurrentUserLeg = currentRosterId !== null && leg.roster_id === currentRosterId;
-          const isSubmitted = leg.status === 'submitted';
+          const isSubmitted = leg.status !== 'pending';
+          const legOutcome =
+            leg.outcome && leg.outcome !== 'pending'
+              ? leg.outcome
+              : leg.status === 'won'
+              ? 'won'
+              : leg.status === 'lost'
+              ? 'lost'
+              : leg.status === 'voided'
+              ? 'void'
+              : null;
           const isUnassigned = currentRosterId === null;
-          const canEdit = parlay.status === 'open' && isCurrentUserLeg;
-          const isClickable = parlay.status === 'open' && (isCurrentUserLeg || isUnassigned);
+          const canEdit = parlay.status === 'open' && isCurrentUserLeg && !legOutcome;
+          const isClickable = parlay.status === 'open' && (canEdit || isUnassigned);
 
           const handleClick = () => {
             if (isCurrentUserLeg) {
@@ -439,10 +449,25 @@ export const ParlayCard: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Right Column: Odds Badge + Submit/Edit CTA for Current User or Pending */}
+              {/* Right Column: Odds Badge + Outcome Badge + Submit/Edit CTA for Current User or Pending */}
               <div className="shrink-0 flex items-center justify-end space-x-2 pl-3">
                 {isSubmitted ? (
                   <>
+                    {legOutcome === 'won' && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-extrabold text-[10px]">
+                        HIT
+                      </span>
+                    )}
+                    {legOutcome === 'lost' && (
+                      <span className="px-2 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30 font-extrabold text-[10px]">
+                        MISS
+                      </span>
+                    )}
+                    {legOutcome === 'void' && (
+                      <span className="px-2 py-0.5 rounded bg-gray-500/20 text-gray-300 border border-gray-500/30 font-bold text-[10px]">
+                        PUSH
+                      </span>
+                    )}
                     {canEdit && (
                       <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-sleeper-accent text-black text-xs font-extrabold shadow-sm hover:brightness-110 transition">
                         <Edit3 className="w-3 h-3" />

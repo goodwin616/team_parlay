@@ -19,13 +19,36 @@ KALSHI_API_BASE_URL = os.environ.get(
 )
 
 
+def _infer_effective_kalshi_side(leg: Dict[str, Any]) -> str:
+    """
+    Returns the effective Kalshi side ('yes' or 'no') for a leg, correcting
+    legacy game-line picks where KXNFLTOTAL UNDER or KXNFLSPREAD underdog (+X.5)
+    was stored with kalshi_side='yes' on a single-ticker market.
+    """
+    kalshi_side = str(leg.get("kalshi_side") or "").strip().lower()
+    ticker = str(leg.get("kalshi_market_ticker") or "").strip().upper()
+    desc = str(leg.get("description") or "").strip().upper()
+
+    if kalshi_side == "yes":
+        if "KXNFLTOTAL" in ticker and not ticker.endswith("-U") and desc.startswith("UNDER "):
+            return "no"
+        if "KXNFLSPREAD" in ticker and " +" in desc:
+            return "no"
+
+    return kalshi_side
+
+
 def grade_leg(leg: Dict[str, Any], market: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Grades a single parlay leg against Kalshi market resolution data.
     """
     updated = dict(leg)
+    existing_outcome = str(leg.get("outcome") or "").strip().lower()
     if not market or not isinstance(market, dict):
-        updated["outcome"] = "pending"
+        if existing_outcome in ("won", "lost", "void"):
+            updated["outcome"] = existing_outcome
+        else:
+            updated["outcome"] = "pending"
         return updated
 
     # Unwrap nested "market" key if present
@@ -34,15 +57,23 @@ def grade_leg(leg: Dict[str, Any], market: Optional[Dict[str, Any]]) -> Dict[str
 
     status = str(market.get("status") or "").strip().lower()
     result = str(market.get("result") or "").strip().lower()
-    kalshi_side = str(leg.get("kalshi_side") or "").strip().lower()
+    kalshi_side = _infer_effective_kalshi_side(leg)
 
-    if status in ("finalized", "settled"):
-        if kalshi_side and result == kalshi_side:
-            outcome = "won"
-        elif result in ("void", "scalar") or status == "void":
+    is_resolved_status = (
+        status in ("finalized", "settled", "determined")
+        or (status == "closed" and result in ("yes", "no", "void", "scalar"))
+    )
+
+    if is_resolved_status:
+        if result in ("void", "scalar") or status == "void":
             outcome = "void"
+        elif result in ("yes", "no"):
+            if kalshi_side and result == kalshi_side:
+                outcome = "won"
+            else:
+                outcome = "lost"
         else:
-            outcome = "lost"
+            outcome = existing_outcome if existing_outcome in ("won", "lost", "void") else "pending"
     elif status == "void":
         outcome = "void"
     else:
@@ -58,12 +89,13 @@ def grade_parlay(parlay: Dict[str, Any], market_lookup: Dict[str, Any]) -> Dict[
     settlement status, and recalculates payout if any legs were voided.
     """
     updated_parlay = dict(parlay)
+    is_open_ticket = str(parlay.get("status") or "") == "open"
     legs = parlay.get("legs", [])
     graded_legs: List[Dict[str, Any]] = []
 
     for leg in legs:
         is_submitted = (
-            leg.get("status", "submitted") == "submitted"
+            leg.get("status", "submitted") != "pending"
             or bool(leg.get("kalshi_market_ticker"))
         )
         if is_submitted:
@@ -80,7 +112,7 @@ def grade_parlay(parlay: Dict[str, Any], market_lookup: Dict[str, Any]) -> Dict[
 
     submitted_legs = [
         l for l in graded_legs
-        if l.get("status", "submitted") == "submitted" or bool(l.get("kalshi_market_ticker"))
+        if l.get("status", "submitted") != "pending" or bool(l.get("kalshi_market_ticker"))
     ]
 
     if not submitted_legs:
@@ -89,22 +121,26 @@ def grade_parlay(parlay: Dict[str, Any], market_lookup: Dict[str, Any]) -> Dict[
         return updated_parlay
 
     stake = float(updated_parlay.get("stake") or 5.0)
+    any_leg_pending = any(l.get("outcome") == "pending" for l in submitted_legs)
 
-    # If any submitted leg is lost -> ticket lost
+    # If any submitted leg is lost -> ticket lost, but only finalize settlement_status
+    # once all submitted legs have resolved so remaining legs still get graded.
     if any(l.get("outcome") == "lost" for l in submitted_legs):
         updated_parlay["outcome"] = "lost"
-        updated_parlay["settlement_status"] = "finalized"
-        updated_parlay["status"] = "lost"
+        updated_parlay["settlement_status"] = "pending" if (any_leg_pending or is_open_ticket) else "finalized"
+        if not is_open_ticket:
+            updated_parlay["status"] = "lost"
         updated_parlay["actual_payout"] = 0.0
     # Else if any submitted leg is pending -> ticket pending
-    elif any(l.get("outcome") == "pending" for l in submitted_legs):
+    elif any_leg_pending:
         updated_parlay["outcome"] = "pending"
         updated_parlay["settlement_status"] = "pending"
     # Else all submitted legs are won or void -> ticket won
     else:
-        updated_parlay["outcome"] = "won"
-        updated_parlay["settlement_status"] = "finalized"
-        updated_parlay["status"] = "won"
+        updated_parlay["outcome"] = "won" if not is_open_ticket else "pending"
+        updated_parlay["settlement_status"] = "pending" if is_open_ticket else "finalized"
+        if not is_open_ticket:
+            updated_parlay["status"] = "won"
 
         has_void = any(l.get("outcome") == "void" for l in submitted_legs)
         if has_void:
@@ -187,12 +223,24 @@ def settle_unfinalized_parlays(
             status = str(data.get("status") or "")
             settlement_status = str(data.get("settlement_status") or "")
 
-            is_eligible = (week < current_week) or (status == "locked")
+            has_submitted_tickers = any(
+                bool(leg.get("kalshi_market_ticker"))
+                for leg in data.get("legs", [])
+            )
+            is_eligible = (
+                (week < current_week)
+                or (status == "locked")
+                or (week == current_week and has_submitted_tickers)
+            )
             if not is_eligible:
                 continue
 
             if settlement_status == "finalized":
                 continue
+
+            if week < current_week and status == "open":
+                data = dict(data)
+                data["status"] = "locked"
 
             unfinalized_docs.append((doc, data))
     except Exception as exc:

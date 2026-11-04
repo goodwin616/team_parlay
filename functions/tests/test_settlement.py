@@ -56,6 +56,34 @@ class TestGradeLeg:
         graded = grade_leg(leg, market)
         assert graded["outcome"] == "won"
 
+    def test_grade_leg_determined_status(self):
+        leg = {"kalshi_market_ticker": "TICKER-1", "kalshi_side": "yes"}
+        market = {"status": "determined", "result": "yes"}
+        graded = grade_leg(leg, market)
+        assert graded["outcome"] == "won"
+
+    def test_grade_leg_preserves_existing_outcome_when_market_none(self):
+        leg = {"kalshi_market_ticker": "TICKER-1", "kalshi_side": "yes", "outcome": "won"}
+        graded = grade_leg(leg, None)
+        assert graded["outcome"] == "won"
+
+    def test_grade_leg_infers_no_side_for_total_under_and_underdog_spread(self):
+        under_leg = {
+            "kalshi_market_ticker": "KXNFLTOTAL-26NOV01BUFNYJ-45",
+            "kalshi_side": "yes",
+            "description": "UNDER 45.5",
+        }
+        market_under_won = {"status": "finalized", "result": "no"}
+        assert grade_leg(under_leg, market_under_won)["outcome"] == "won"
+
+        underdog_leg = {
+            "kalshi_market_ticker": "KXNFLSPREAD-26NOV01BUFNYJ-BUF3",
+            "kalshi_side": "yes",
+            "description": "Jets +3.5",
+        }
+        market_underdog_won = {"status": "finalized", "result": "no"}
+        assert grade_leg(underdog_leg, market_underdog_won)["outcome"] == "won"
+
 
 class TestGradeParlay:
     def test_grade_parlay_won_all_legs_hit(self):
@@ -166,6 +194,29 @@ class TestGradeParlay:
         assert graded["outcome"] == "pending"
         assert graded["settlement_status"] == "pending"
         assert graded["legs"][0]["outcome"] == "won"
+        assert graded["legs"][1]["outcome"] == "pending"
+
+    def test_grade_parlay_keeps_settlement_pending_when_one_leg_lost_and_other_leg_pending(self):
+        parlay = {
+            "week": 1,
+            "status": "locked",
+            "estimated_payout": 20.0,
+            "legs": [
+                {"kalshi_market_ticker": "T1", "kalshi_side": "yes", "odds_decimal": 2.0, "status": "submitted"},
+                {"kalshi_market_ticker": "T2", "kalshi_side": "yes", "odds_decimal": 2.0, "status": "submitted"},
+            ],
+        }
+        market_lookup = {
+            "T1": {"status": "finalized", "result": "no"},
+            "T2": {"status": "open"},
+        }
+        graded = grade_parlay(parlay, market_lookup)
+        assert graded["outcome"] == "lost"
+        # Because T2 is still open/pending, settlement_status must remain pending
+        # so T2 gets graded when its game finishes!
+        assert graded["settlement_status"] == "pending"
+        assert graded["actual_payout"] == 0.0
+        assert graded["legs"][0]["outcome"] == "lost"
         assert graded["legs"][1]["outcome"] == "pending"
 
 
@@ -311,6 +362,65 @@ class TestSettleUnfinalizedParlays:
         # Leg and parlay stay pending and no exception thrown
         assert results[0]["outcome"] == "pending"
         assert results[0]["settlement_status"] == "pending"
+
+    def test_grades_current_week_open_parlay_legs_without_locking(self):
+        mock_db = MagicMock()
+        mock_parlays_coll = mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value.collection.return_value
+
+        doc_active = MagicMock()
+        doc_active.id = "8"
+        doc_active.to_dict.return_value = {
+            "week": 8,
+            "status": "open",
+            "settlement_status": "pending",
+            "estimated_payout": 30.0,
+            "legs": [
+                {
+                    "roster_id": 1,
+                    "kalshi_market_ticker": "TICKER-TNF",
+                    "kalshi_side": "yes",
+                    "status": "submitted",
+                    "odds_decimal": 1.91,
+                },
+                {
+                    "roster_id": 2,
+                    "kalshi_market_ticker": "TICKER-SNF",
+                    "kalshi_side": "yes",
+                    "status": "submitted",
+                    "odds_decimal": 1.91,
+                },
+                {
+                    "roster_id": 3,
+                    "status": "pending",
+                },
+            ],
+        }
+
+        mock_parlays_coll.stream.return_value = [doc_active]
+
+        def fetcher(ticker):
+            if ticker == "TICKER-TNF":
+                return {"status": "finalized", "result": "yes"}
+            return {"status": "open"}
+
+        results = settle_unfinalized_parlays(
+            mock_db,
+            league_id="league123",
+            season="2026",
+            current_week=8,
+            kalshi_fetcher_fn=fetcher,
+        )
+
+        assert len(results) == 1
+        assert results[0]["status"] == "open"
+        assert results[0]["settlement_status"] == "pending"
+        assert results[0]["legs"][0]["outcome"] == "won"
+        assert results[0]["legs"][1]["outcome"] == "pending"
+        doc_active.reference.update.assert_called_once()
+        update_args = doc_active.reference.update.call_args[0][0]
+        assert update_args["status"] == "open"
+        assert update_args["settlement_status"] == "pending"
+        assert update_args["legs"][0]["outcome"] == "won"
 
 
 class TestInitOrSyncLeagueIntegration:

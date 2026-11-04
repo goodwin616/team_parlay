@@ -494,4 +494,77 @@ describe('ParlayCard Component', () => {
       expect(html).not.toContain('Submission Deadline:');
     });
   });
+
+  describe('Leg Outcome Scoring Badges (HIT / MISS / PUSH)', () => {
+    it('renders HIT, MISS, and PUSH badges on legs with resolved outcomes', () => {
+      const scoredParlay: WeeklyParlay = {
+        ...activeParlay,
+        week: 8,
+        legs: [
+          {
+            id: 'leg-won',
+            roster_id: 1,
+            team_name: 'Philly Special',
+            owner_name: 'Blake',
+            nfl_team: 'PHI',
+            description: 'Saquon Barkley Anytime TD',
+            odds_american: '-115',
+            odds_decimal: 1.87,
+            status: 'submitted',
+            outcome: 'won',
+          },
+          {
+            id: 'leg-lost',
+            roster_id: 2,
+            team_name: 'Gridiron Clowns',
+            owner_name: 'Bob',
+            nfl_team: 'BUF',
+            description: 'Josh Allen 250+ Pass Yds',
+            odds_american: '+120',
+            odds_decimal: 2.2,
+            status: 'submitted',
+            outcome: 'lost',
+          },
+          {
+            id: 'leg-void',
+            roster_id: 3,
+            team_name: 'Buffalo Stampede',
+            owner_name: 'Charlie',
+            nfl_team: 'KC',
+            description: 'Travis Kelce Anytime TD',
+            odds_american: '+110',
+            odds_decimal: 2.1,
+            status: 'submitted',
+            outcome: 'void',
+          },
+          {
+            id: 'leg-pending-outcome',
+            roster_id: 4,
+            team_name: 'Sunday Funday',
+            owner_name: 'Dave',
+            nfl_team: 'SF',
+            description: 'CMC Anytime TD',
+            odds_american: '-150',
+            odds_decimal: 1.67,
+            status: 'submitted',
+            outcome: 'pending',
+          },
+        ],
+      };
+
+      const html = cleanText(
+        renderToString(
+          <ParlayCard
+            parlay={scoredParlay}
+            currentRosterId={1}
+            onOpenPickModal={() => {}}
+          />
+        )
+      );
+
+      expect(html).toContain('HIT');
+      expect(html).toContain('MISS');
+      expect(html).toContain('PUSH');
+    });
+  });
 });
